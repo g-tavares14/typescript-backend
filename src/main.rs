@@ -7,10 +7,12 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() {
-
     let pool = create_pool().await;
 
-    let app = Router::new().nest("/health", routes::healthcheck::health_route()).with_state(pool);
+    let app = Router::new()
+        .nest("/health", routes::healthcheck::health_route())
+        .nest("/auth", routes::auth::auth_routes())
+        .with_state(pool);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
@@ -33,5 +35,4 @@ async fn create_pool() -> PgPool {
         .expect("Failed to connect to database");
 
     pool
-
 }

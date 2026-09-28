@@ -1,5 +1,5 @@
-use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
 use axum::extract::State;
+use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
 use sqlx::PgPool;
 
 async fn health(State(pool): State<PgPool>) -> impl IntoResponse {
