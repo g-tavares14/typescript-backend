@@ -4,6 +4,7 @@ import Fastify, { type FastifyError } from "fastify";
 import type { Db } from "./db/client.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { usersRoutes } from "./routes/users.ts";
 
 // rateLimit: false existe só para os testes (ver test/helpers.ts). O server.ts não passa a opção: fica ligado.
 export function buildApp(db: Db, options: { logger?: boolean; rateLimit?: boolean } = {}) {
@@ -43,6 +44,7 @@ export function buildApp(db: Db, options: { logger?: boolean; rateLimit?: boolea
 
   app.register(healthRoutes, { prefix: "/health", db });
   app.register(authRoutes, { prefix: "/auth", db });
+  app.register(usersRoutes, { prefix: "/users", db });
 
   return app;
 }

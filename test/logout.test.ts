@@ -22,7 +22,7 @@ function postLogout(authorization?: string) {
 }
 
 function getMe(authorization: string) {
-  return app.inject({ method: "GET", url: "/auth/me", headers: { authorization } });
+  return app.inject({ method: "GET", url: "/users/me", headers: { authorization } });
 }
 
 beforeEach(async () => {
@@ -47,7 +47,7 @@ describe("POST /auth/logout", () => {
     expect(response.body).toBe("");
   });
 
-  test("invalida o token: /auth/me e um segundo /auth/logout respondem 401", async () => {
+  test("invalida o token: /users/me e um segundo /auth/logout respondem 401", async () => {
     // Arrange
     await registerUser(app);
     const token = await loginUser(app);

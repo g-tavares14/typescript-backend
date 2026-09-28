@@ -108,7 +108,7 @@ describe("rate limit em POST /auth/register (3 por minuto por IP)", () => {
 });
 
 describe("rotas sem limite", () => {
-  test("GET /auth/me não é limitado: 10 chamadas seguidas com token válido dão 200", async () => {
+  test("GET /users/me não é limitado: 10 chamadas seguidas com token válido dão 200", async () => {
     // Arrange
     await postRegister(defaultUser);
     const login = await postLogin({ email: defaultUser.email, password: defaultUser.password });
@@ -118,7 +118,7 @@ describe("rotas sem limite", () => {
     for (let i = 1; i <= 10; i++) {
       const response = await current.app.inject({
         method: "GET",
-        url: "/auth/me",
+        url: "/users/me",
         headers: { authorization: bearer(token) },
       });
       expect(response.statusCode).toBe(200);

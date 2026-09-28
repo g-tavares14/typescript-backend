@@ -20,7 +20,7 @@ const secretKey = new TextEncoder().encode(process.env.JWT_SECRET);
 function getMe(authorization?: string) {
   return app.inject({
     method: "GET",
-    url: "/auth/me",
+    url: "/users/me",
     headers: authorization === undefined ? {} : { authorization },
   });
 }
@@ -47,7 +47,7 @@ afterAll(async () => {
   await closeTestApp(app, db);
 });
 
-describe("GET /auth/me", () => {
+describe("GET /users/me", () => {
   test("responde 200 com os dados do usuário dono do token", async () => {
     // Arrange
     const { id } = await registerUser(app);
@@ -192,5 +192,21 @@ describe("GET /auth/me", () => {
 
     // Act + Assert
     expectUnauthorized(await getMe(bearer(token)));
+  });
+
+  test("GET /auth/me não existe mais (404)", async () => {
+    // Arrange: um token válido, para provar que o 404 é da rota e não de falta de autenticação.
+    await registerUser(app);
+    const token = await loginUser(app);
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { authorization: bearer(token) },
+    });
+
+    // Assert
+    expect(response.statusCode).toBe(404);
   });
 });

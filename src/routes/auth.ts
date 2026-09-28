@@ -1,11 +1,12 @@
-import { and, DrizzleQueryError, eq, sql } from "drizzle-orm";
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { DrizzleQueryError, eq, sql } from "drizzle-orm";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
+import { authenticate, unauthorized } from "../lib/authenticate.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
-import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken, verifyAccessToken } from "../lib/token.ts";
+import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
 
 // Validação e normalização do corpo da requisição.
 // O trim/toLowerCase roda antes da validação do email e do username; a senha não é alterada.
@@ -97,14 +98,6 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
     return reply.send({ token, tokenType: "Bearer", expiresIn: ACCESS_TOKEN_TTL_SECONDS });
   });
 
-  app.get("/me", async (request, reply) => {
-    const user = await authenticate(request, db);
-    if (!user) {
-      return unauthorized(reply);
-    }
-    return reply.send(user);
-  });
-
   // Logout em todos os dispositivos: subir a versão invalida todos os tokens já emitidos para o usuário.
   app.post("/logout", async (request, reply) => {
     const user = await authenticate(request, db);
@@ -136,40 +129,4 @@ function isUniqueViolation(error: unknown): boolean {
 // A API responde só a primeira mensagem de validação.
 function badRequest(reply: FastifyReply, error: z.ZodError) {
   return reply.code(400).send({ error: error.issues[0]?.message ?? "Dados inválidos" });
-}
-
-// Resposta padrão para qualquer falha de autenticação: sem token, token inválido ou revogado, ou usuário inexistente.
-function unauthorized(reply: FastifyReply) {
-  return reply.code(401).header("WWW-Authenticate", "Bearer").send({ error: "Não autenticado" });
-}
-
-// Devolve o usuário dono do token, ou null se o token for inválido, estiver revogado ou a conta não existir.
-async function authenticate(request: FastifyRequest, db: Db) {
-  // Formato "Bearer <token>". O nome do esquema não diferencia maiúsculas (RFC 7235).
-  const [scheme, token] = request.headers.authorization?.split(" ") ?? [];
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
-
-  // Token inválido (assinatura, expiração ou formato) é culpa de quem chamou: vira null → 401.
-  const claims = await verifyAccessToken(token).catch(() => null);
-  if (!claims) {
-    return null;
-  }
-
-  // Fora do catch acima: se o banco falhar, o erro vai para o error handler (500 + log).
-  // Exigir a versão igual na mesma consulta é o que revoga tokens antigos; só sai daqui o que a rota pode expor.
-  const [user] = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      email: users.email,
-      role: users.role,
-      createdAt: users.createdAt,
-    })
-    .from(users)
-    .where(and(eq(users.id, claims.userId), eq(users.tokenVersion, claims.tokenVersion)))
-    .limit(1);
-
-  return user ?? null;
 }

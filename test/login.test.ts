@@ -33,7 +33,7 @@ describe("POST /auth/login", () => {
     const claims = decodeJwt(body.token);
     expect(claims.sub).toBe(id);
     expect(claims.ver).toBe(0);
-    // A role não vai no token: quem precisa dela consulta GET /auth/me.
+    // A role não vai no token: quem precisa dela consulta GET /users/me.
     expect(claims).not.toHaveProperty("role");
     expect(claims.exp! - claims.iat!).toBe(3600);
     expect(claims).not.toHaveProperty("password");
