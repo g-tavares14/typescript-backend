@@ -2,7 +2,15 @@ import { eq } from "drizzle-orm";
 import { SignJWT } from "jose";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { users } from "../src/db/schema.ts";
-import { closeTestApp, createTestApp, loginUser, registerUser, resetDatabase } from "./helpers.ts";
+import {
+  bearer,
+  closeTestApp,
+  createTestApp,
+  expectUnauthorized,
+  loginUser,
+  registerUser,
+  resetDatabase,
+} from "./helpers.ts";
 
 const { app, db } = createTestApp();
 
@@ -21,12 +29,6 @@ function base64url(value: object) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
-function expectUnauthorized(response: Awaited<ReturnType<typeof getMe>>) {
-  expect(response.statusCode).toBe(401);
-  expect(response.headers["www-authenticate"]).toBe("Bearer");
-  expect(response.json()).toEqual({ error: "Não autenticado" });
-}
-
 beforeEach(async () => {
   await resetDatabase(db);
 });
@@ -42,7 +44,7 @@ describe("GET /auth/me", () => {
     const token = await loginUser(app);
 
     // Act
-    const response = await getMe(`Bearer ${token}`);
+    const response = await getMe(bearer(token));
 
     // Assert
     expect(response.statusCode).toBe(200);
@@ -74,7 +76,7 @@ describe("GET /auth/me", () => {
     await db.update(users).set({ role: "admin" }).where(eq(users.id, id));
 
     // Act
-    const response = await getMe(`Bearer ${token}`);
+    const response = await getMe(bearer(token));
 
     // Assert
     expect(response.json()).toMatchObject({ role: "admin" });
@@ -101,7 +103,7 @@ describe("GET /auth/me", () => {
     const forgedPayload = base64url({ sub: id, ver: 0, role: "admin", exp: Math.floor(Date.now() / 1000) + 3600 });
 
     // Act
-    const response = await getMe(`Bearer ${header}.${forgedPayload}.${signature}`);
+    const response = await getMe(bearer(`${header}.${forgedPayload}.${signature}`));
 
     // Assert
     expectUnauthorized(response);
@@ -117,7 +119,7 @@ describe("GET /auth/me", () => {
       .sign(new TextEncoder().encode("outro-segredo-qualquer-com-mais-de-32-caracteres"));
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 com token sem assinatura (alg: none)", async () => {
@@ -127,7 +129,7 @@ describe("GET /auth/me", () => {
     const token = `${base64url({ alg: "none", typ: "JWT" })}.${base64url(payload)}.`;
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 com token expirado", async () => {
@@ -142,7 +144,7 @@ describe("GET /auth/me", () => {
       .sign(secretKey);
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 com token sem expiração", async () => {
@@ -154,7 +156,7 @@ describe("GET /auth/me", () => {
       .sign(secretKey);
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 quando o 'sub' do token não é um id válido", async () => {
@@ -166,7 +168,7 @@ describe("GET /auth/me", () => {
       .sign(secretKey);
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 quando a versão do token não é a atual", async () => {
@@ -176,7 +178,7 @@ describe("GET /auth/me", () => {
     await db.update(users).set({ tokenVersion: 1 }).where(eq(users.id, id));
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 com token válido e bem assinado, mas sem 'ver'", async () => {
@@ -189,7 +191,7 @@ describe("GET /auth/me", () => {
       .sign(secretKey);
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 
   test("responde 401 quando o usuário foi apagado depois do login", async () => {
@@ -199,6 +201,6 @@ describe("GET /auth/me", () => {
     await db.delete(users).where(eq(users.id, id));
 
     // Act + Assert
-    expectUnauthorized(await getMe(`Bearer ${token}`));
+    expectUnauthorized(await getMe(bearer(token)));
   });
 });

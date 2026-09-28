@@ -1,4 +1,6 @@
 import { sql } from "drizzle-orm";
+import type { LightMyRequestResponse } from "fastify";
+import { expect } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { createDb, type Db } from "../src/db/client.ts";
 
@@ -46,4 +48,16 @@ export async function loginUser(app: TestApp, credentials = defaultUser) {
     throw new Error(`Login falhou no arrange do teste: ${response.statusCode} ${response.body}`);
   }
   return response.json<{ token: string }>().token;
+}
+
+// Valor do header Authorization para um token.
+export function bearer(token: string) {
+  return `Bearer ${token}`;
+}
+
+// Toda falha de autenticação tem a mesma resposta: 401, WWW-Authenticate e a mesma mensagem.
+export function expectUnauthorized(response: LightMyRequestResponse) {
+  expect(response.statusCode).toBe(401);
+  expect(response.headers["www-authenticate"]).toBe("Bearer");
+  expect(response.json()).toEqual({ error: "Não autenticado" });
 }

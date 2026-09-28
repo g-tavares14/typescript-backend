@@ -1,5 +1,13 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
-import { closeTestApp, createTestApp, loginUser, registerUser, resetDatabase } from "./helpers.ts";
+import {
+  bearer,
+  closeTestApp,
+  createTestApp,
+  expectUnauthorized,
+  loginUser,
+  registerUser,
+  resetDatabase,
+} from "./helpers.ts";
 
 const { app, db } = createTestApp();
 
@@ -17,12 +25,6 @@ function getMe(authorization: string) {
   return app.inject({ method: "GET", url: "/auth/me", headers: { authorization } });
 }
 
-function expectUnauthorized(response: Awaited<ReturnType<typeof postLogout>>) {
-  expect(response.statusCode).toBe(401);
-  expect(response.headers["www-authenticate"]).toBe("Bearer");
-  expect(response.json()).toEqual({ error: "Não autenticado" });
-}
-
 beforeEach(async () => {
   await resetDatabase(db);
 });
@@ -38,7 +40,7 @@ describe("POST /auth/logout", () => {
     const token = await loginUser(app);
 
     // Act
-    const response = await postLogout(`Bearer ${token}`);
+    const response = await postLogout(bearer(token));
 
     // Assert
     expect(response.statusCode).toBe(204);
@@ -49,11 +51,11 @@ describe("POST /auth/logout", () => {
     // Arrange
     await registerUser(app);
     const token = await loginUser(app);
-    await postLogout(`Bearer ${token}`);
+    await postLogout(bearer(token));
 
     // Act
-    const me = await getMe(`Bearer ${token}`);
-    const secondLogout = await postLogout(`Bearer ${token}`);
+    const me = await getMe(bearer(token));
+    const secondLogout = await postLogout(bearer(token));
 
     // Assert
     expectUnauthorized(me);
@@ -64,11 +66,11 @@ describe("POST /auth/logout", () => {
     // Arrange
     await registerUser(app);
     const oldToken = await loginUser(app);
-    await postLogout(`Bearer ${oldToken}`);
+    await postLogout(bearer(oldToken));
 
     // Act
     const newToken = await loginUser(app);
-    const response = await getMe(`Bearer ${newToken}`);
+    const response = await getMe(bearer(newToken));
 
     // Assert
     expect(response.statusCode).toBe(200);
@@ -82,11 +84,11 @@ describe("POST /auth/logout", () => {
     const tokenB = await loginUser(app, outroUsuario);
 
     // Act
-    await postLogout(`Bearer ${tokenA}`);
+    await postLogout(bearer(tokenA));
 
     // Assert
-    expect((await getMe(`Bearer ${tokenA}`)).statusCode).toBe(401);
-    expect((await getMe(`Bearer ${tokenB}`)).statusCode).toBe(200);
+    expect((await getMe(bearer(tokenA))).statusCode).toBe(401);
+    expect((await getMe(bearer(tokenB))).statusCode).toBe(200);
   });
 
   test("sai de todos os dispositivos: dois tokens do mesmo usuário morrem com um logout", async () => {
@@ -94,15 +96,15 @@ describe("POST /auth/logout", () => {
     await registerUser(app);
     const tokenCelular = await loginUser(app);
     const tokenNotebook = await loginUser(app);
-    expect((await getMe(`Bearer ${tokenCelular}`)).statusCode).toBe(200);
-    expect((await getMe(`Bearer ${tokenNotebook}`)).statusCode).toBe(200);
+    expect((await getMe(bearer(tokenCelular))).statusCode).toBe(200);
+    expect((await getMe(bearer(tokenNotebook))).statusCode).toBe(200);
 
     // Act: sai por um dos dispositivos.
-    await postLogout(`Bearer ${tokenCelular}`);
+    await postLogout(bearer(tokenCelular));
 
     // Assert
-    expectUnauthorized(await getMe(`Bearer ${tokenCelular}`));
-    expectUnauthorized(await getMe(`Bearer ${tokenNotebook}`));
+    expectUnauthorized(await getMe(bearer(tokenCelular)));
+    expectUnauthorized(await getMe(bearer(tokenNotebook)));
   });
 
   test("responde 401 sem o header Authorization", async () => {
