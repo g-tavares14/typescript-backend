@@ -2,115 +2,109 @@
 
 Instruções para qualquer agente de IA (Claude, Copilot, Cursor, etc.) que trabalhar neste repositório.
 
-## Papel do agente: instrutor, não programador
+## Papel do agente: escreve o código, o dono revisa
 
-Este é um projeto de **aprendizado de Rust**. O dono do repositório está aprendendo a linguagem por hobby
-e **quer escrever o código ele mesmo**. O agente atua como **instrutor/mentor**.
+O dono do repositório faz o **backend em TypeScript** de um projeto em dupla (um amigo faz o frontend).
+O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega deve ser fácil de revisar.
 
 ### O agente DEVE
 
-- Explicar conceitos (ownership, borrowing, lifetimes, traits, `Result`/`?`, async, etc.) quando eles aparecerem.
-- Dividir cada tarefa em passos pequenos e dizer **o que** fazer e **por que**, deixando o **como** para o aluno.
-- Dar dicas progressivas quando o aluno travar (ver "Níveis de ajuda" abaixo).
-- Revisar o código que o aluno escreveu: apontar bugs, riscos de segurança e código não idiomático,
-  explicando o motivo de cada ponto.
-- Explicar mensagens de erro do compilador (`rustc`/`cargo`) em linguagem simples, apontando a linha e a causa.
-- Indicar a documentação oficial relevante (The Rust Book, docs.rs da crate, exemplos oficiais).
-- Rodar comandos de verificação para ajudar na revisão: `cargo check`, `cargo build`, `cargo test`,
-  `cargo clippy`, `cargo fmt --check`, `docker compose ps`.
+- Implementar em passos pequenos, verificando cada um (`npm run typecheck` e testes reais com `curl`) antes de seguir.
+- Ao terminar, explicar **o que mudou e por quê**, destacando conceitos novos de TypeScript, Node.js, Fastify ou Drizzle.
+- Deixar perguntas de revisão quando houver uma decisão ou um conceito importante no código.
+- Conferir a documentação ou o código da **versão instalada** das bibliotecas antes de usar uma API (os exemplos da internet costumam estar desatualizados).
+- Apontar riscos de segurança, mesmo fora da tarefa pedida.
 - Responder em **português**.
 
 ### O agente NÃO DEVE
 
-- Escrever ou editar código em `src/`, `migrations/` ou testes sem pedido **explícito** do aluno
-  (ex.: "pode escrever isso pra mim", "corrige esse arquivo").
-- Entregar a solução completa de uma tarefa logo de cara, mesmo em forma de trecho no chat.
-- Corrigir erros silenciosamente: sempre explicar o erro e deixar o aluno aplicar a correção.
-
-Exemplos pequenos e **genéricos** (fora do contexto do projeto) para ilustrar um conceito são permitidos,
-desde que não sejam a resposta pronta da tarefa atual.
-
-Arquivos de infraestrutura e documentação (`docker-compose.yml`, `.env.example`, `.gitignore`, `README.md`,
-este arquivo) podem ser editados pelo agente quando o aluno pedir.
-
-### Níveis de ajuda
-
-Quando o aluno travar, subir um nível por vez, só avançando se ele pedir mais ajuda:
-
-1. **Pergunta guia**: "O que essa função precisa retornar se o email já existir?"
-2. **Conceito**: explicar a ideia ou a ferramenta envolvida e linkar a documentação.
-3. **Assinatura / esqueleto**: mostrar tipos e assinaturas de função, sem o corpo.
-4. **Pseudocódigo**: descrever os passos da lógica em português.
-5. **Código**: só se o aluno pedir explicitamente a solução. Explicar linha a linha.
-
-### Ao revisar código
-
-- Começar pelo que está certo, depois os problemas em ordem de gravidade: **bug > segurança > idiomático > estilo**.
-- Para cada problema: onde está (`arquivo:linha`), o que acontece de errado e uma dica de como resolver.
-- Não reescrever o arquivo; o aluno aplica as mudanças.
+- Commitar ou dar push sem pedido do dono.
+- Adicionar dependências sem dizer quais e por quê.
+- Editar migrations que já foram aplicadas; criar uma nova no lugar.
 
 ## Contexto do projeto
 
-- Backend de um projeto feito em dupla: o aluno faz o **backend em Rust**, um amigo faz o frontend.
 - **Etapa atual: autenticação.**
-- Nível do aluno: iniciante em Rust. Adaptar as explicações a isso e não assumir conhecimento prévio da linguagem.
+- O projeto começou em Rust e foi migrado para TypeScript. A versão em Rust está na tag `versao-rust`.
 
 ### Stack
 
 | Parte | Escolha |
 |---|---|
-| Linguagem | Rust (stable, via rustup) |
-| Framework web | `axum` + `tokio` |
+| Linguagem | TypeScript 7 |
+| Runtime | Node.js 22 (executa `.ts` direto, sem etapa de build) |
+| Framework web | Fastify 5 |
 | Banco de dados | PostgreSQL 17 via Docker Compose |
-| Acesso ao banco | ORM `sea-orm` 2.x (roda sobre o `sqlx`); entidades geradas com `sea-orm-cli` |
-| Migrations | Arquivos `.sql` com `sqlx-cli` (pasta `migrations/`) |
-| JSON | `serde` / `serde_json` |
-| Hash de senha | `argon2` |
-| Token de login | `jsonwebtoken` (JWT) |
-| Configuração | `dotenvy` + arquivo `.env` |
-| Logs | `tracing` / `tracing-subscriber` |
+| ORM e migrations | Drizzle ORM + `drizzle-kit` (driver `pg`) |
+| Validação | `zod` |
+| Hash de senha | `argon2` (argon2id) |
+| Token de login | JWT (a definir) |
+| Configuração | `.env` carregado pelo próprio Node (`--env-file-if-exists`) |
+| Logs | `pino` (logger embutido do Fastify) |
+
+### Estrutura
+
+```
+src/
+├── server.ts        # ponto de entrada: lê a config, conecta no banco, sobe o servidor
+├── app.ts           # monta o Fastify: error handler e rotas
+├── config.ts        # variáveis de ambiente (fail fast se faltar alguma)
+├── db/
+│   ├── client.ts    # pool de conexões + Drizzle
+│   └── schema.ts    # definição das tabelas (fonte das migrations)
+├── lib/
+│   └── password.ts  # hash de senha
+└── routes/
+    ├── health.ts    # GET /health
+    └── auth.ts      # POST /auth/register
+drizzle/             # migrations SQL geradas pelo drizzle-kit
+```
 
 ### Comandos úteis
 
 ```bash
-docker compose up -d          # sobe o Postgres
-docker compose down           # desliga (os dados ficam no volume)
-cargo run                     # compila e roda
-cargo check                   # verifica erros sem gerar binário (mais rápido)
-cargo clippy                  # sugestões de código idiomático
-cargo fmt                     # formata o código
-sqlx migrate add <nome>       # cria uma migration
-sqlx migrate run              # aplica as migrations
-sea-orm-cli generate entity -o src/entities   # regera as entidades a partir do banco
+docker compose up -d                          # sobe o Postgres
+npm run dev                                   # servidor com reload automático
+npm start                                     # servidor
+npm run typecheck                             # verificação de tipos (tsc)
+npm run db:generate -- --name <nome>          # gera migration a partir do schema.ts
+npm run db:migrate                            # aplica as migrations
 ```
 
 A URL do banco fica em `.env` (`DATABASE_URL`). O `.env` não é versionado; `.env.example` é o modelo.
 
+### Convenções
+
+- Imports relativos com extensão `.ts` (exigência do Node ao executar TypeScript direto).
+- Só sintaxe de TypeScript que pode ser "apagada" (`erasableSyntaxOnly`): nada de `enum`, `namespace` ou parameter properties.
+- Respostas da API em JSON. Erros no formato `{ "error": "mensagem" }`.
+- Rotas são plugins do Fastify que recebem o `db` nas opções.
+
 ## Decisões registradas
 
-- **ORM (SeaORM)** em vez de SQL puro: escolha do aluno, para reduzir código repetitivo conforme o projeto crescer.
-  As migrations continuam em SQL com `sqlx-cli`, porque já existiam e SQL é mais simples de revisar.
-  As entidades em `src/entities/` são **geradas** a partir do banco: não editar à mão, regerar após cada migration.
+- **TypeScript em vez de Rust**: decisão do dono, por relevância de mercado.
+- **Fastify + Drizzle**: Fastify pela estrutura simples de rotas e bom suporte a TypeScript;
+  Drizzle por ser leve, com sintaxe próxima de SQL e tipos inferidos direto do schema.
+- **Sem etapa de build**: o Node 22 executa `.ts` removendo os tipos; o `tsc` é usado só para verificar os tipos.
+- **Migrations geradas pelo `drizzle-kit`** a partir do `src/db/schema.ts`. Sempre revisar o SQL gerado antes de aplicar.
 
 ## Roteiro da etapa de autenticação
 
-Guiar o aluno nesta ordem, um passo por vez, conferindo que cada um funciona antes de seguir:
+1. ✅ **Servidor mínimo**: `GET /health`, verificando também o banco (200 / 503).
+2. ✅ **Configuração**: `DATABASE_URL` do ambiente, com fail fast.
+3. ✅ **Conexão com o banco**: pool do `pg` + Drizzle.
+4. ✅ **Tabela `users`**: `id` (uuid), `username` (único), `email` (único), `password_hash`, `role`, `created_at`.
+5. ✅ **`POST /auth/register`**: valida, normaliza, gera hash, salva e trata duplicados (`409`).
+6. ✅ **Tratamento de erros**: error handler central; 5xx genérico para o cliente e detalhado no log.
+7. ⬜ **`POST /auth/login`**: verificar a senha e devolver um JWT.
+8. ⬜ **`GET /auth/me`**: rota protegida que valida o token do header `Authorization: Bearer`.
+9. ⬜ **Testes automatizados**: fluxo feliz e principais erros de cada rota.
 
-1. **Servidor mínimo**: axum respondendo `GET /health` → `200 OK`.
-2. **Configuração**: ler `DATABASE_URL` e `JWT_SECRET` do `.env`.
-3. **Conexão com o banco**: criar a conexão (`DatabaseConnection` do SeaORM) e compartilhar com as rotas (`State`).
-4. **Migration da tabela `users`**: `id` (uuid), `username` (único), `email` (único), `password_hash`, `role`, `created_at`. Depois, gerar a entidade com `sea-orm-cli`.
-5. **`POST /auth/register`**: validar entrada, gerar hash com argon2, salvar e tratar email duplicado (`409`).
-6. **Tratamento de erros**: um tipo de erro próprio que implementa `IntoResponse`.
-7. **`POST /auth/login`**: verificar a senha e devolver um JWT.
-8. **`GET /auth/me`**: rota protegida que extrai e valida o token do header `Authorization: Bearer`.
-9. **Testes**: pelo menos o fluxo feliz e os principais erros de cada rota.
+### Regras de segurança (verificar em toda mudança)
 
-### Regras de segurança (cobrar nas revisões)
-
-- Nunca salvar nem logar senha em texto puro.
-- Login com email ou senha errados retorna a **mesma** mensagem de erro (não revelar qual dos dois falhou).
-- `JWT_SECRET` vem do ambiente, nunca fica fixo no código.
-- Tokens com expiração (`exp`).
-- Queries sempre parametrizadas (o SeaORM já faz isso; em SQL manual, usar `$1`, `$2`, …); nunca montar SQL concatenando strings.
+- Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais (cuidado com os parâmetros de consultas nos erros do Drizzle).
+- Login com email ou senha errados retorna a **mesma** mensagem de erro.
+- A `role` nunca vem da requisição: novos usuários usam o `DEFAULT` do banco.
+- `JWT_SECRET` vem do ambiente, nunca fica fixo no código. Tokens com expiração (`exp`).
+- Consultas sempre parametrizadas (o Drizzle faz isso); nunca montar SQL concatenando strings. No `sql\`...\``, só interpolar valores, nunca texto de SQL vindo de fora.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
