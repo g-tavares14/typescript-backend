@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { closeTestApp, createTestApp, defaultUser, resetDatabase } from "./helpers.ts";
+import { bearer, closeTestApp, createTestApp, defaultUser, resetDatabase } from "./helpers.ts";
 
 const RATE_LIMIT_ERROR = { error: "Muitas tentativas. Tente novamente mais tarde." };
 
@@ -119,7 +119,7 @@ describe("rotas sem limite", () => {
       const response = await current.app.inject({
         method: "GET",
         url: "/auth/me",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: bearer(token) },
       });
       expect(response.statusCode).toBe(200);
     }
