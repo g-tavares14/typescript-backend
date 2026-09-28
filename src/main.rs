@@ -2,10 +2,13 @@ mod routes;
 
 use axum::Router;
 use dotenvy::dotenv;
+use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() {
-    let _database_url = load_database_url();
+
+    let pool = create_pool().await;
 
     let app = Router::new().nest("/health", routes::healthcheck::health_route());
 
@@ -20,4 +23,15 @@ fn load_database_url() -> String {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     database_url
+}
+
+async fn create_pool() -> PgPool {
+    let database_url = load_database_url();
+    let pool = PgPoolOptions::new()
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to database");
+
+    pool
+
 }
