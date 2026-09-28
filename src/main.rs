@@ -1,18 +1,18 @@
 mod routes;
+mod entities;
 
 use axum::Router;
 use dotenvy::dotenv;
-use sqlx::PgPool;
-use sqlx::postgres::PgPoolOptions;
+use sea_orm::{Database, DatabaseConnection};
 
 #[tokio::main]
 async fn main() {
-    let pool = create_pool().await;
+    let db = connect_database().await;
 
     let app = Router::new()
         .nest("/health", routes::healthcheck::health_route())
         .nest("/auth", routes::auth::auth_routes())
-        .with_state(pool);
+        .with_state(db);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
@@ -27,12 +27,11 @@ fn load_database_url() -> String {
     database_url
 }
 
-async fn create_pool() -> PgPool {
+async fn connect_database() -> DatabaseConnection {
     let database_url = load_database_url();
-    let pool = PgPoolOptions::new()
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to database");
 
-    pool
+    // O DatabaseConnection do SeaORM guarda um pool de conexões do sqlx por dentro.
+    Database::connect(&database_url)
+        .await
+        .expect("Failed to connect to database")
 }

@@ -62,7 +62,8 @@ Quando o aluno travar, subir um nível por vez, só avançando se ele pedir mais
 | Linguagem | Rust (stable, via rustup) |
 | Framework web | `axum` + `tokio` |
 | Banco de dados | PostgreSQL 17 via Docker Compose |
-| Acesso ao banco | `sqlx` (+ `sqlx-cli` para migrations) |
+| Acesso ao banco | ORM `sea-orm` 2.x (roda sobre o `sqlx`); entidades geradas com `sea-orm-cli` |
+| Migrations | Arquivos `.sql` com `sqlx-cli` (pasta `migrations/`) |
 | JSON | `serde` / `serde_json` |
 | Hash de senha | `argon2` |
 | Token de login | `jsonwebtoken` (JWT) |
@@ -80,9 +81,16 @@ cargo clippy                  # sugestões de código idiomático
 cargo fmt                     # formata o código
 sqlx migrate add <nome>       # cria uma migration
 sqlx migrate run              # aplica as migrations
+sea-orm-cli generate entity -o src/entities   # regera as entidades a partir do banco
 ```
 
 A URL do banco fica em `.env` (`DATABASE_URL`). O `.env` não é versionado; `.env.example` é o modelo.
+
+## Decisões registradas
+
+- **ORM (SeaORM)** em vez de SQL puro: escolha do aluno, para reduzir código repetitivo conforme o projeto crescer.
+  As migrations continuam em SQL com `sqlx-cli`, porque já existiam e SQL é mais simples de revisar.
+  As entidades em `src/entities/` são **geradas** a partir do banco: não editar à mão, regerar após cada migration.
 
 ## Roteiro da etapa de autenticação
 
@@ -90,8 +98,8 @@ Guiar o aluno nesta ordem, um passo por vez, conferindo que cada um funciona ant
 
 1. **Servidor mínimo**: axum respondendo `GET /health` → `200 OK`.
 2. **Configuração**: ler `DATABASE_URL` e `JWT_SECRET` do `.env`.
-3. **Conexão com o banco**: criar o pool do sqlx e compartilhar com as rotas (`State`).
-4. **Migration da tabela `users`**: `id` (uuid), `email` (único), `password_hash`, `created_at`.
+3. **Conexão com o banco**: criar a conexão (`DatabaseConnection` do SeaORM) e compartilhar com as rotas (`State`).
+4. **Migration da tabela `users`**: `id` (uuid), `username` (único), `email` (único), `password_hash`, `role`, `created_at`. Depois, gerar a entidade com `sea-orm-cli`.
 5. **`POST /auth/register`**: validar entrada, gerar hash com argon2, salvar e tratar email duplicado (`409`).
 6. **Tratamento de erros**: um tipo de erro próprio que implementa `IntoResponse`.
 7. **`POST /auth/login`**: verificar a senha e devolver um JWT.
@@ -104,5 +112,5 @@ Guiar o aluno nesta ordem, um passo por vez, conferindo que cada um funciona ant
 - Login com email ou senha errados retorna a **mesma** mensagem de erro (não revelar qual dos dois falhou).
 - `JWT_SECRET` vem do ambiente, nunca fica fixo no código.
 - Tokens com expiração (`exp`).
-- Queries sempre parametrizadas (o `sqlx` já faz isso com `$1`, `$2`, …); nunca montar SQL concatenando strings.
+- Queries sempre parametrizadas (o SeaORM já faz isso; em SQL manual, usar `$1`, `$2`, …); nunca montar SQL concatenando strings.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.

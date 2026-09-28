@@ -2,7 +2,7 @@ use argon2::{Argon2, PasswordHasher};
 use axum::http::StatusCode;
 use axum::{Json, Router, routing::post};
 use serde::Deserialize;
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection;
 
 #[derive(Deserialize)]
 struct RegisterRequest {
@@ -62,6 +62,6 @@ fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error>
     Ok(hash.to_string())
 }
 
-pub fn auth_routes() -> Router<PgPool> {
+pub fn auth_routes() -> Router<DatabaseConnection> {
     Router::new().route("/register", post(register))
 }
