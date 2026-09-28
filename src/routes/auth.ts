@@ -48,7 +48,7 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
   app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
+      return badRequest(reply, parsed.error);
     }
 
     const { username, email, password } = parsed.data;
@@ -73,7 +73,7 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
   app.post("/login", { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
+      return badRequest(reply, parsed.error);
     }
 
     const { email, password } = parsed.data;
@@ -131,6 +131,11 @@ function isUniqueViolation(error: unknown): boolean {
     error.cause instanceof pg.DatabaseError &&
     error.cause.code === "23505"
   );
+}
+
+// A API responde só a primeira mensagem de validação.
+function badRequest(reply: FastifyReply, error: z.ZodError) {
+  return reply.code(400).send({ error: error.issues[0]?.message ?? "Dados inválidos" });
 }
 
 // Resposta padrão para qualquer falha de autenticação: sem token, token inválido ou revogado, ou usuário inexistente.
