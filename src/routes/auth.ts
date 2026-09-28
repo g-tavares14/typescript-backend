@@ -7,7 +7,7 @@ import { hashPassword, simulatePasswordVerification, verifyPassword } from "../l
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken, verifyAccessToken } from "../lib/token.ts";
 
 // Validação e normalização do corpo da requisição.
-// O trim/toLowerCase roda antes da validação do email; a senha não é alterada.
+// O trim/toLowerCase roda antes da validação do email e do username; a senha não é alterada.
 const required = { error: "Campo obrigatório ausente ou inválido" };
 
 const emailSchema = z.string(required).trim().toLowerCase().pipe(z.email("Email inválido"));
@@ -16,8 +16,13 @@ const registerSchema = z.object({
   username: z
     .string(required)
     .trim()
+    .toLowerCase()
     .min(3, "O username deve ter entre 3 e 50 caracteres")
-    .max(50, "O username deve ter entre 3 e 50 caracteres"),
+    .max(50, "O username deve ter entre 3 e 50 caracteres")
+    // Só a-z, 0-9 e _: barra acento, espaço, letras de outros alfabetos e caracteres invisíveis.
+    // Junto com o toLowerCase, "Joao" e "joao" viram o mesmo username (o UNIQUE do banco pega o duplicado).
+    // Vem depois dos checks de tamanho, então um username curto continua recebendo a mensagem de tamanho.
+    .regex(/^[a-z0-9_]+$/, "O username só pode ter letras sem acento, números e _"),
   email: emailSchema,
   password: z.string(required).min(8, "A senha deve ter no mínimo 8 caracteres"),
 });

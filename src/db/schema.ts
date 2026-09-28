@@ -12,7 +12,12 @@ export const users = pgTable(
     role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [check("users_role_check", sql`${table.role} IN ('user', 'admin')`)],
+  (table) => [
+    check("users_role_check", sql`${table.role} IN ('user', 'admin')`),
+    // Defesa em profundidade: a API já normaliza o username, mas o banco garante o formato
+    // mesmo para quem inserir sem passar por ela. Como só aceita minúsculas, o UNIQUE vira case-insensitive.
+    check("users_username_format_check", sql`${table.username} ~ '^[a-z0-9_]{3,50}$'`),
+  ],
 );
 
 export type User = typeof users.$inferSelect;

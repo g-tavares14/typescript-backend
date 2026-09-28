@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD CONSTRAINT "users_username_format_check" CHECK ("users"."username" ~ '^[a-z0-9_]{3,50}$');

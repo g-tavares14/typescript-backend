@@ -15,7 +15,7 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Arquivos: docker-compose.yml
 - Tamanho: XS · Depende de: T0
 
-## Task 2: Regra do username
+## Task 2: Regra do username ✅
 - Aceite: `trim` + `toLowerCase`; formato `^[a-z0-9_]{3,50}$` (400 com mensagem da spec);
   `Joao` depois de `joao` → 409; `CHECK users_username_format_check` no banco (migration 0001).
 - Verificar: testes novos em register.test.ts; SQL da 0001 revisado; `joão` renomeado no dev; `db:migrate` ok; curl.

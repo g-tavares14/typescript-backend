@@ -5,6 +5,8 @@ import { closeTestApp, createTestApp, registerUser, resetDatabase } from "./help
 
 const { app, db } = createTestApp();
 
+const USERNAME_FORMAT_ERROR = "O username só pode ter letras sem acento, números e _";
+
 beforeEach(async () => {
   await resetDatabase(db);
 });
@@ -94,6 +96,35 @@ describe("POST /auth/register", () => {
     expect(response.statusCode).toBe(409);
   });
 
+  test("normaliza o username: salva e devolve em minúsculas", async () => {
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { username: "Joao", email: "joao@email.com", password: "senha123" },
+    });
+
+    // Assert
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({ id: expect.any(String), username: "joao" });
+  });
+
+  test("responde 409 quando só as maiúsculas do username mudam (Joao depois de joao)", async () => {
+    // Arrange
+    await registerUser(app);
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { username: "Joao", email: "outro@email.com", password: "senha123" },
+    });
+
+    // Assert
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: "Email ou username já cadastrado" });
+  });
+
   test.each([
     ["corpo vazio", {}, "Campo obrigatório ausente ou inválido"],
     ["email inválido", { username: "joao", email: "nao-e-email", password: "senha123" }, "Email inválido"],
@@ -102,6 +133,20 @@ describe("POST /auth/register", () => {
       { username: "jo", email: "joao@email.com", password: "senha123" },
       "O username deve ter entre 3 e 50 caracteres",
     ],
+    ["username com acento", { username: "joão", email: "joao@email.com", password: "senha123" }, USERNAME_FORMAT_ERROR],
+    ["username com espaço", { username: "jo ao", email: "joao@email.com", password: "senha123" }, USERNAME_FORMAT_ERROR],
+    // "о" abaixo é a letra cirílica U+043E, visualmente igual ao "o" latino.
+    [
+      "username com letra cirílica parecida com latina",
+      { username: "j\u043eao", email: "joao@email.com", password: "senha123" },
+      USERNAME_FORMAT_ERROR,
+    ],
+    [
+      "username com caractere invisível (zero-width space)",
+      { username: "joao\u200b", email: "joao@email.com", password: "senha123" },
+      USERNAME_FORMAT_ERROR,
+    ],
+    ["username com hífen", { username: "joao-silva", email: "joao@email.com", password: "senha123" }, USERNAME_FORMAT_ERROR],
     [
       "campo com tipo errado",
       { username: "joao", email: "joao@email.com", password: 12345678 },
