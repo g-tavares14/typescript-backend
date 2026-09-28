@@ -1,3 +1,4 @@
+use argon2::{Argon2, PasswordHasher};
 use axum::http::StatusCode;
 use axum::{Json, Router, routing::post};
 use serde::Deserialize;
@@ -42,7 +43,23 @@ async fn register(Json(payload): Json<RegisterRequest>) -> Result<String, (Statu
         ));
     }
 
-    Ok(format!("Usuário {username} ({email}) passou na validação"))
+    // Só chega aqui se todas as validações passaram.
+    // Se o hash falhar, o problema é do servidor (500), não de quem mandou os dados (400).
+    let senha_hasheada = hash_password(&password).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Erro interno ao processar a senha".to_string(),
+        )
+    })?;
+
+    // TEMPORÁRIO: o hash aparece na resposta só para teste. Na Parte 4 ele vai para o banco.
+    Ok(format!("Usuário {username} ({email})\nhash: {senha_hasheada}"))
+}
+
+// No argon2 0.6, o hash_password já gera um salt aleatório por dentro.
+fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
+    let hash = Argon2::default().hash_password(password.as_bytes())?;
+    Ok(hash.to_string())
 }
 
 pub fn auth_routes() -> Router<PgPool> {
