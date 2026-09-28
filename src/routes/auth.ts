@@ -144,16 +144,13 @@ async function authenticate(request: FastifyRequest, db: Db) {
     return null;
   }
 
-  // O try/catch cobre só a verificação do token: é a única falha que é culpa de quem chamou.
-  let userId: string;
-  let tokenVersion: number;
-  try {
-    ({ userId, tokenVersion } = await verifyAccessToken(token));
-  } catch {
+  // Token inválido (assinatura, expiração ou formato) é culpa de quem chamou: vira null → 401.
+  const claims = await verifyAccessToken(token).catch(() => null);
+  if (!claims) {
     return null;
   }
 
-  // Fora do try: se o banco falhar, o erro vai para o error handler (500 + log).
+  // Fora do catch acima: se o banco falhar, o erro vai para o error handler (500 + log).
   // Exigir a versão igual na mesma consulta é o que revoga tokens antigos; só sai daqui o que a rota pode expor.
   const [user] = await db
     .select({
@@ -164,7 +161,7 @@ async function authenticate(request: FastifyRequest, db: Db) {
       createdAt: users.createdAt,
     })
     .from(users)
-    .where(and(eq(users.id, userId), eq(users.tokenVersion, tokenVersion)))
+    .where(and(eq(users.id, claims.userId), eq(users.tokenVersion, claims.tokenVersion)))
     .limit(1);
 
   return user ?? null;
