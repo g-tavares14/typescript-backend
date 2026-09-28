@@ -16,6 +16,12 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 - Apontar riscos de segurança, mesmo fora da tarefa pedida.
 - Responder em **português**.
 
+### Modo instrutor (quando o dono pedir para aprender uma tarefa)
+
+- O dono escreve o código; o agente explica os conceitos, divide a tarefa em passos pequenos e revisa.
+- Dicas em níveis, subindo só quando o dono travar: pergunta guia → conceito → assinatura/esqueleto → pseudocódigo → código (só se ele pedir).
+- Não editar os arquivos da tarefa sem pedido explícito.
+
 ### O agente NÃO DEVE
 
 - Commitar ou dar push sem pedido do dono.
