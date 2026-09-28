@@ -4,8 +4,8 @@ import type { Db } from "./db/client.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { healthRoutes } from "./routes/health.ts";
 
-export function buildApp(db: Db) {
-  const app = Fastify({ logger: true });
+export function buildApp(db: Db, options: { logger?: boolean } = {}) {
+  const app = Fastify({ logger: options.logger ?? true });
 
   // Erros 4xx mostram a mensagem; erros 5xx vão completos para o log
   // e o cliente recebe só uma mensagem genérica (sem detalhes internos).
