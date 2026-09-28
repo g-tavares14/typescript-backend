@@ -32,7 +32,7 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 ## Checkpoint A (T0–T3)
 - [x] typecheck + testes verdes, migrations aplicadas no dev, fluxo register → login → me com curl
 
-## Task 4: POST /auth/logout
+## Task 4: POST /auth/logout ✅
 - Aceite: 204 sem corpo; token antigo → 401 em `/me` e `/logout`; novo login funciona; outro usuário não é afetado; sem token → 401.
 - Verificar: test/logout.test.ts; curl.
 - Arquivos: src/routes/auth.ts, test/logout.test.ts

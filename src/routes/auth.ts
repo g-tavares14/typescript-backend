@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
@@ -96,6 +96,23 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
       return unauthorized(reply);
     }
     return reply.send(user);
+  });
+
+  // Logout em todos os dispositivos: subir a versão invalida todos os tokens já emitidos para o usuário.
+  app.post("/logout", async (request, reply) => {
+    const user = await authenticate(request, db);
+    if (!user) {
+      return unauthorized(reply);
+    }
+
+    // O incremento é feito pelo banco (token_version + 1), não lendo o valor e somando em JS:
+    // assim, dois logouts simultâneos não se atropelam e cada um conta.
+    await db
+      .update(users)
+      .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
+      .where(eq(users.id, user.id));
+
+    return reply.code(204).send();
   });
 };
 
