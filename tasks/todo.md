@@ -46,9 +46,9 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Tamanho: M · Depende de: T4
 
 ## Checkpoint B (T4–T5)
-- [ ] typecheck + testes verdes; curl: logout revoga, 6º login → 429
+- [x] typecheck + testes verdes; curl: logout revoga, 6º login → 429
 
-## Task 6: Documentação
+## Task 6: Documentação ✅
 - Aceite: AGENTS.md com estrutura, roteiro (passo 9 ✅ + endurecimento), decisões (409 mantido, role fora do token,
   token_version, rate limit/trustProxy, regra do username) e a regra de segurança sobre `token_version`.
 - Verificar: leitura; links e comandos corretos.
@@ -56,5 +56,5 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Tamanho: S · Depende de: T5
 
 ## Checkpoint final
-- [ ] Todos os critérios de sucesso da spec marcados
-- [ ] Resumo das mudanças de contrato para o frontend
+- [x] Todos os critérios de sucesso da spec marcados
+- [x] Resumo das mudanças de contrato para o frontend

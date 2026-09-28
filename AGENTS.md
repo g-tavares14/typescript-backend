@@ -45,6 +45,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 | Validação | `zod` |
 | Hash de senha | `argon2` (argon2id) |
 | Token de login | JWT com `jose` (HS256, expira em 1 hora) |
+| Rate limit | `@fastify/rate-limit` (contadores em memória, por IP) |
 | Configuração | `.env` carregado pelo próprio Node (`--env-file-if-exists`) |
 | Logs | `pino` (logger embutido do Fastify) |
 
@@ -53,7 +54,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 ```
 src/
 ├── server.ts        # ponto de entrada: lê a config, conecta no banco, sobe o servidor
-├── app.ts           # monta o Fastify: error handler e rotas
+├── app.ts           # monta o Fastify: error handler, rate limit e rotas
 ├── config.ts        # variáveis de ambiente (fail fast se faltar alguma)
 ├── db/
 │   ├── client.ts    # pool de conexões + Drizzle
@@ -63,7 +64,12 @@ src/
 │   └── token.ts     # geração e verificação do JWT
 └── routes/
     ├── health.ts    # GET /health
-    └── auth.ts      # POST /auth/register, POST /auth/login e GET /auth/me
+    └── auth.ts      # POST /auth/register, /auth/login e /auth/logout, GET /auth/me
+test/
+├── global-setup.ts  # cria o banco de testes (_test) e aplica as migrations
+├── helpers.ts       # createTestApp (rate limit desligado por padrão) e atalhos de cadastro/login
+├── register.test.ts, login.test.ts, me.test.ts, logout.test.ts
+└── rate-limit.test.ts  # único que liga o rate limit, com os limites reais
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 ```
 
@@ -74,6 +80,7 @@ docker compose up -d                          # sobe o Postgres
 npm run dev                                   # servidor com reload automático
 npm start                                     # servidor
 npm run typecheck                             # verificação de tipos (tsc)
+npm test                                      # testes automatizados (vitest, banco *_test)
 npm run db:generate -- --name <nome>          # gera migration a partir do schema.ts
 npm run db:migrate                            # aplica as migrations
 ```
@@ -94,18 +101,30 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
   Drizzle por ser leve, com sintaxe próxima de SQL e tipos inferidos direto do schema.
 - **Sem etapa de build**: o Node 22 executa `.ts` removendo os tipos; o `tsc` é usado só para verificar os tipos.
 - **Migrations geradas pelo `drizzle-kit`** a partir do `src/db/schema.ts`. Sempre revisar o SQL gerado antes de aplicar.
+- **`409` mantido no cadastro** (email ou username em uso): o usuário precisa saber o motivo; aceitamos revelar quais emails têm conta, e o rate limit torna a varredura em massa lenta.
+- **`role` fora do JWT**: a role pode mudar no banco e o token ficaria desatualizado; quem precisa dela lê `GET /auth/me`.
+- **Logout por `token_version`**: o JWT leva `ver` e só vale se for igual a `users.token_version`; o logout incrementa a coluna e derruba os tokens de todos os dispositivos, sem lista de tokens revogados.
+- **Username só `a-z0-9_`, salvo em minúsculas** (`CHECK` no banco): impede personificação com `Joao`/`joao`, acentos, letras parecidas de outros alfabetos e caracteres invisíveis; o `UNIQUE` vira case-insensitive.
+- **Rate limit em memória, por IP** (login 5/min, cadastro 3/min): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
+  Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
+  Com mais de um processo, os contadores não são compartilhados: trocar o store por Redis.
 
 ## Roteiro da etapa de autenticação
 
 1. ✅ **Servidor mínimo**: `GET /health`, verificando também o banco (200 / 503).
 2. ✅ **Configuração**: `DATABASE_URL` do ambiente, com fail fast.
 3. ✅ **Conexão com o banco**: pool do `pg` + Drizzle.
-4. ✅ **Tabela `users`**: `id` (uuid), `username` (único), `email` (único), `password_hash`, `role`, `created_at`.
+4. ✅ **Tabela `users`**: `id` (uuid), `username` (único), `email` (único), `password_hash`, `role`, `token_version`, `created_at`.
 5. ✅ **`POST /auth/register`**: valida, normaliza, gera hash, salva e trata duplicados (`409`).
 6. ✅ **Tratamento de erros**: error handler central; 5xx genérico para o cliente e detalhado no log.
-7. ✅ **`POST /auth/login`**: verifica a senha e devolve um JWT (`sub` = id do usuário, `role`, `exp`).
+7. ✅ **`POST /auth/login`**: verifica a senha e devolve um JWT (`sub` = id do usuário, `ver` = versão do token, `iat`, `exp`; sem `role`).
 8. ✅ **`GET /auth/me`**: rota protegida; valida o token do header `Authorization: Bearer` e devolve os dados atuais do usuário.
-9. ⬜ **Testes automatizados**: fluxo feliz e principais erros de cada rota.
+9. ✅ **Testes automatizados**: fluxo feliz e principais erros de cada rota.
+10. ✅ **Endurecimento da autenticação** (spec em `SPEC-auth-hardening.md`):
+    - **Username**: normalizado (`trim` + minúsculas) e restrito a `a-z0-9_`, com `CHECK` no banco.
+    - **Token e logout**: JWT sem `role` e com `ver`; `POST /auth/logout` revoga todos os tokens do usuário (`token_version`).
+    - **Rate limit**: 5 logins e 3 cadastros por minuto por IP (`429` + `Retry-After`).
+    - **Postgres**: porta publicada só em `127.0.0.1`.
 
 ### Regras de segurança (verificar em toda mudança)
 
@@ -115,3 +134,6 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - `JWT_SECRET` vem do ambiente, nunca fica fixo no código. Tokens com expiração (`exp`).
 - Consultas sempre parametrizadas (o Drizzle faz isso); nunca montar SQL concatenando strings. No `sql\`...\``, só interpolar valores, nunca texto de SQL vindo de fora.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
+- Toda rota protegida usa `authenticate()` (`src/routes/auth.ts`): ela confere a assinatura, a expiração e a `token_version` do token.
+- A troca de senha (futura) deve incrementar `token_version`, para derrubar os tokens emitidos com a senha antiga.
+- Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`).

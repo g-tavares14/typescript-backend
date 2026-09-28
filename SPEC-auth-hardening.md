@@ -124,12 +124,12 @@ async function authenticate(request: FastifyRequest, db: Db) { ... }
 
 ## Success Criteria
 
-- [ ] Todos os critérios de aceite acima têm teste automatizado passando.
-- [ ] `npm run typecheck` e `npm test` verdes.
-- [ ] `curl` no servidor real: 6º login em 1 min → 429; logout → token antigo 401; `Joao` duplica `joao`.
-- [ ] `docker compose port db 5432` mostra `127.0.0.1:5432`.
-- [ ] Migrations aplicadas no banco de dev sem erro.
-- [ ] AGENTS.md atualizado (decisões, estrutura, roteiro).
+- [x] Todos os critérios de aceite acima têm teste automatizado passando.
+- [x] `npm run typecheck` e `npm test` verdes.
+- [x] `curl` no servidor real: 6º login em 1 min → 429; logout → token antigo 401; `Joao` duplica `joao`.
+- [x] `docker compose port db 5432` mostra `127.0.0.1:5432`.
+- [x] Migrations aplicadas no banco de dev sem erro.
+- [x] AGENTS.md atualizado (decisões, estrutura, roteiro).
 
 ## Premissas
 
