@@ -1,11 +1,10 @@
-use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
-async fn health() -> impl IntoResponse {
-    StatusCode::OK
-}
+mod routes;
+
+use axum::Router;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/health", get(health));
+    let app = Router::new().nest("/health", routes::healthcheck::health_route());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
