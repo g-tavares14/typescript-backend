@@ -1,5 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, DrizzleQueryError, eq, sql } from "drizzle-orm";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
@@ -123,11 +124,12 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
 };
 
 // 23505 é o código do Postgres para violação de UNIQUE.
-// O Drizzle embrulha o erro do driver, então o código fica em error.cause.
+// O Drizzle embrulha o erro do driver em DrizzleQueryError, e o erro original fica em .cause.
 function isUniqueViolation(error: unknown): boolean {
-  const pgError = error instanceof Error && error.cause ? error.cause : error;
   return (
-    typeof pgError === "object" && pgError !== null && "code" in pgError && pgError.code === "23505"
+    error instanceof DrizzleQueryError &&
+    error.cause instanceof pg.DatabaseError &&
+    error.cause.code === "23505"
   );
 }
 
