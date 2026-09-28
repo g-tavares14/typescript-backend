@@ -38,7 +38,7 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Arquivos: src/routes/auth.ts, test/logout.test.ts
 - Tamanho: S · Depende de: T3
 
-## Task 5: Rate limit em login e cadastro
+## Task 5: Rate limit em login e cadastro ✅
 - Aceite: 6º login/min por IP → 429 `{ error }` + `Retry-After`; 4º cadastro/min → 429;
   429 acontece antes de validar o corpo; `/me` e `/logout` sem limite; testes antigos usam `rateLimit: false`.
 - Verificar: test/rate-limit.test.ts com os limites reais; curl (6 logins seguidos).

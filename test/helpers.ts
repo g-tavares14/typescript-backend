@@ -6,9 +6,11 @@ type TestApp = ReturnType<typeof buildApp>;
 
 // Cria o app de verdade (mesmas rotas, mesmo error handler), ligado ao banco de testes.
 // Os testes chamam as rotas com app.inject(), sem abrir porta de rede.
-export function createTestApp() {
+// O rate limit fica DESLIGADO por padrão: todo inject vem do mesmo IP, e os testes fazem mais
+// de 5 logins por minuto. Só o test/rate-limit.test.ts liga (rateLimit: true), com os limites reais.
+export function createTestApp({ rateLimit = false }: { rateLimit?: boolean } = {}) {
   const db = createDb(process.env.DATABASE_URL ?? "");
-  const app = buildApp(db, { logger: false });
+  const app = buildApp(db, { logger: false, rateLimit });
   return { app, db };
 }
 

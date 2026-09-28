@@ -34,11 +34,17 @@ const loginSchema = z.object({
   password: z.string(required).min(1, "Campo obrigatório ausente ou inválido"),
 });
 
+// Limites por IP em login e cadastro, contra força bruta e consumo de memória:
+// cada hash argon2 usa 64 MiB de RAM, então muitas requisições simultâneas derrubariam o servidor.
+// O cadastro é mais restrito porque sempre calcula um hash e criar contas em massa não tem uso legítimo.
+const LOGIN_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
+const REGISTER_RATE_LIMIT = { max: 3, timeWindow: "1 minute" };
+
 // A mesma mensagem para "email não existe" e "senha errada": não revela quais emails têm conta.
 const INVALID_CREDENTIALS = "Email ou senha inválidos";
 
 export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
-  app.post("/register", async (request, reply) => {
+  app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
@@ -63,7 +69,7 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
     }
   });
 
-  app.post("/login", async (request, reply) => {
+  app.post("/login", { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
