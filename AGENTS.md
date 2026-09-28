@@ -38,7 +38,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 | ORM e migrations | Drizzle ORM + `drizzle-kit` (driver `pg`) |
 | Validação | `zod` |
 | Hash de senha | `argon2` (argon2id) |
-| Token de login | JWT (a definir) |
+| Token de login | JWT com `jose` (HS256, expira em 1 hora) |
 | Configuração | `.env` carregado pelo próprio Node (`--env-file-if-exists`) |
 | Logs | `pino` (logger embutido do Fastify) |
 
@@ -53,10 +53,11 @@ src/
 │   ├── client.ts    # pool de conexões + Drizzle
 │   └── schema.ts    # definição das tabelas (fonte das migrations)
 ├── lib/
-│   └── password.ts  # hash de senha
+│   ├── password.ts  # hash e verificação de senha
+│   └── token.ts     # geração do JWT
 └── routes/
     ├── health.ts    # GET /health
-    └── auth.ts      # POST /auth/register
+    └── auth.ts      # POST /auth/register e POST /auth/login
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 ```
 
@@ -71,7 +72,7 @@ npm run db:generate -- --name <nome>          # gera migration a partir do schem
 npm run db:migrate                            # aplica as migrations
 ```
 
-A URL do banco fica em `.env` (`DATABASE_URL`). O `.env` não é versionado; `.env.example` é o modelo.
+A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env`. O `.env` não é versionado; `.env.example` é o modelo.
 
 ### Convenções
 
@@ -96,7 +97,7 @@ A URL do banco fica em `.env` (`DATABASE_URL`). O `.env` não é versionado; `.e
 4. ✅ **Tabela `users`**: `id` (uuid), `username` (único), `email` (único), `password_hash`, `role`, `created_at`.
 5. ✅ **`POST /auth/register`**: valida, normaliza, gera hash, salva e trata duplicados (`409`).
 6. ✅ **Tratamento de erros**: error handler central; 5xx genérico para o cliente e detalhado no log.
-7. ⬜ **`POST /auth/login`**: verificar a senha e devolver um JWT.
+7. ✅ **`POST /auth/login`**: verifica a senha e devolve um JWT (`sub` = id do usuário, `role`, `exp`).
 8. ⬜ **`GET /auth/me`**: rota protegida que valida o token do header `Authorization: Bearer`.
 9. ⬜ **Testes automatizados**: fluxo feliz e principais erros de cada rota.
 

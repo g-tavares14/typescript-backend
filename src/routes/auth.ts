@@ -1,12 +1,16 @@
+import { eq } from "drizzle-orm";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
-import { hashPassword } from "../lib/password.ts";
+import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
+import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
 
 // Validação e normalização do corpo da requisição.
 // O trim/toLowerCase roda antes da validação do email; a senha não é alterada.
 const required = { error: "Campo obrigatório ausente ou inválido" };
+
+const emailSchema = z.string(required).trim().toLowerCase().pipe(z.email("Email inválido"));
 
 const registerSchema = z.object({
   username: z
@@ -14,9 +18,19 @@ const registerSchema = z.object({
     .trim()
     .min(3, "O username deve ter entre 3 e 50 caracteres")
     .max(50, "O username deve ter entre 3 e 50 caracteres"),
-  email: z.string(required).trim().toLowerCase().pipe(z.email("Email inválido")),
+  email: emailSchema,
   password: z.string(required).min(8, "A senha deve ter no mínimo 8 caracteres"),
 });
+
+// No login a senha não tem tamanho mínimo: a regra de 8 caracteres é do cadastro.
+// Se ela mudar no futuro, contas antigas com senhas menores continuam conseguindo entrar.
+const loginSchema = z.object({
+  email: emailSchema,
+  password: z.string(required).min(1, "Campo obrigatório ausente ou inválido"),
+});
+
+// A mesma mensagem para "email não existe" e "senha errada": não revela quais emails têm conta.
+const INVALID_CREDENTIALS = "Email ou senha inválidos";
 
 export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
   app.post("/register", async (request, reply) => {
@@ -42,6 +56,33 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
       }
       throw error; // vira 500 genérico no error handler do app.ts
     }
+  });
+
+  app.post("/login", async (request, reply) => {
+    const parsed = loginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Dados inválidos" });
+    }
+
+    const { email, password } = parsed.data;
+
+    const [user] = await db
+      .select({ id: users.id, role: users.role, passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (!user) {
+      await simulatePasswordVerification(password);
+      return reply.code(401).send({ error: INVALID_CREDENTIALS });
+    }
+
+    if (!(await verifyPassword(user.passwordHash, password))) {
+      return reply.code(401).send({ error: INVALID_CREDENTIALS });
+    }
+
+    const token = await createAccessToken(user);
+    return reply.send({ token, tokenType: "Bearer", expiresIn: ACCESS_TOKEN_TTL_SECONDS });
   });
 };
 
