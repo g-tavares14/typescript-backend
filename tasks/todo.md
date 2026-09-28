@@ -9,7 +9,7 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Arquivos: src/lib/token.ts, src/routes/auth.ts, test/*.ts
 - Tamanho: S · Depende de: nada
 
-## Task 1: Postgres só em 127.0.0.1
+## Task 1: Postgres só em 127.0.0.1 ✅
 - Aceite: `docker compose port db 5432` → `127.0.0.1:5432`.
 - Verificar: `docker compose up -d`, `npm test` verde.
 - Arquivos: docker-compose.yml
