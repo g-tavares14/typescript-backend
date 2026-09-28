@@ -6,7 +6,6 @@ import { users } from "../db/schema.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken, verifyAccessToken } from "../lib/token.ts";
 
-
 // Validação e normalização do corpo da requisição.
 // O trim/toLowerCase roda antes da validação do email; a senha não é alterada.
 const required = { error: "Campo obrigatório ausente ou inválido" };
@@ -83,17 +82,15 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
     }
 
     const token = await createAccessToken(user);
-    return reply.send({ token, tokenType: "Bearer ", expiresIn: ACCESS_TOKEN_TTL_SECONDS });
+    return reply.send({ token, tokenType: "Bearer", expiresIn: ACCESS_TOKEN_TTL_SECONDS });
   });
 
   app.get("/me", async (request, reply) => {
-    const header = request.headers.authorization;
-
-    if (!header || !header.startsWith("Bearer ")) {
+    // Formato "Bearer <token>". O nome do esquema não diferencia maiúsculas (RFC 7235).
+    const [scheme, token] = request.headers.authorization?.split(" ") ?? [];
+    if (scheme?.toLowerCase() !== "bearer" || !token) {
       return unauthorized(reply);
     }
-
-    const token = header.slice("Bearer ".length);
 
     // O try/catch cobre só a verificação do token: é a única falha que é culpa de quem chamou.
     let userId: string;
@@ -105,23 +102,24 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
 
     // Fora do try: se o banco falhar, o erro vai para o error handler (500 + log).
     const [user] = await db
-        .select({
-          id: users.id,
-          username: users.username,
-          email: users.email,
-          role: users.role,
-          createdAt: users.createdAt,
-        })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        role: users.role,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     // O token é válido, mas a conta foi apagada depois do login.
     if (!user) {
       return unauthorized(reply);
-    } return reply.send(user);
-  })
-}
+    }
+    return reply.send(user);
+  });
+};
 
 // 23505 é o código do Postgres para violação de UNIQUE.
 // O Drizzle embrulha o erro do driver, então o código fica em error.cause.

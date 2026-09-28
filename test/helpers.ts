@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import { buildApp } from "../src/app.ts";
 import { createDb, type Db } from "../src/db/client.ts";
 
+type TestApp = ReturnType<typeof buildApp>;
+
 // Cria o app de verdade (mesmas rotas, mesmo error handler), ligado ao banco de testes.
 // Os testes chamam as rotas com app.inject(), sem abrir porta de rede.
 export function createTestApp() {
@@ -11,7 +13,7 @@ export function createTestApp() {
 }
 
 // Libera o servidor e as conexões com o banco no fim dos testes.
-export async function closeTestApp(app: ReturnType<typeof buildApp>, db: Db) {
+export async function closeTestApp(app: TestApp, db: Db) {
   await app.close();
   await db.$client.end();
 }
@@ -19,4 +21,27 @@ export async function closeTestApp(app: ReturnType<typeof buildApp>, db: Db) {
 // Apaga todos os usuários, para cada teste começar do zero.
 export async function resetDatabase(db: Db) {
   await db.execute(sql`TRUNCATE TABLE users`);
+}
+
+export const defaultUser = { username: "joao", email: "joao@email.com", password: "senha123" };
+
+// Atalhos para o "Arrange" dos testes: cadastram e fazem login pelas rotas de verdade.
+export async function registerUser(app: TestApp, user: Record<string, unknown> = defaultUser) {
+  const response = await app.inject({ method: "POST", url: "/auth/register", payload: user });
+  if (response.statusCode !== 201) {
+    throw new Error(`Cadastro falhou no arrange do teste: ${response.statusCode} ${response.body}`);
+  }
+  return response.json<{ id: string; username: string }>();
+}
+
+export async function loginUser(app: TestApp, credentials = defaultUser) {
+  const response = await app.inject({
+    method: "POST",
+    url: "/auth/login",
+    payload: { email: credentials.email, password: credentials.password },
+  });
+  if (response.statusCode !== 200) {
+    throw new Error(`Login falhou no arrange do teste: ${response.statusCode} ${response.body}`);
+  }
+  return response.json<{ token: string }>().token;
 }
