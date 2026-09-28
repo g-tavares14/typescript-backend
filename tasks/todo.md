@@ -22,7 +22,7 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Arquivos: src/routes/auth.ts, src/db/schema.ts, drizzle/0001_*.sql (+ meta), test/register.test.ts
 - Tamanho: M · Depende de: T0
 
-## Task 3: JWT sem role, com versão
+## Task 3: JWT sem role, com versão ✅
 - Aceite: payload `{ sub, ver, iat, exp }` sem `role`; coluna `token_version` (migration 0002);
   token com `ver` diferente do banco → 401 no `/me`; `authenticate()` extraída.
 - Verificar: testes em login.test.ts e me.test.ts; SQL da 0002 revisado; `db:migrate` ok; curl.
@@ -30,7 +30,7 @@ Plano: [plan.md](plan.md). Cada tarefa: teste falhando → código → `npm run 
 - Tamanho: M · Depende de: T2
 
 ## Checkpoint A (T0–T3)
-- [ ] typecheck + testes verdes, migrations aplicadas no dev, fluxo register → login → me com curl
+- [x] typecheck + testes verdes, migrations aplicadas no dev, fluxo register → login → me com curl
 
 ## Task 4: POST /auth/logout
 - Aceite: 204 sem corpo; token antigo → 401 em `/me` e `/logout`; novo login funciona; outro usuário não é afetado; sem token → 401.

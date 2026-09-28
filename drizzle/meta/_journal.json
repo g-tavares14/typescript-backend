@@ -15,6 +15,13 @@
       "when": 1790633539705,
       "tag": "0001_username_format",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790633601204,
+      "tag": "0002_token_version",
+      "breakpoints": true
     }
   ]
 }

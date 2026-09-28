@@ -32,7 +32,9 @@ describe("POST /auth/login", () => {
     // decodeJwt só lê o payload (não verifica a assinatura): serve para conferir o conteúdo.
     const claims = decodeJwt(body.token);
     expect(claims.sub).toBe(id);
-    expect(claims.role).toBe("user");
+    expect(claims.ver).toBe(0);
+    // A role não vai no token: quem precisa dela consulta GET /auth/me.
+    expect(claims).not.toHaveProperty("role");
     expect(claims.exp! - claims.iat!).toBe(3600);
     expect(claims).not.toHaveProperty("password");
     expect(claims).not.toHaveProperty("passwordHash");

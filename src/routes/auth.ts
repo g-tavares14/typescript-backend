@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import { and, eq } from "drizzle-orm";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
@@ -72,7 +72,7 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
     const { email, password } = parsed.data;
 
     const [user] = await db
-      .select({ id: users.id, role: users.role, passwordHash: users.passwordHash })
+      .select({ id: users.id, tokenVersion: users.tokenVersion, passwordHash: users.passwordHash })
       .from(users)
       .where(eq(users.email, email))
       .limit(1);
@@ -91,34 +91,7 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
   });
 
   app.get("/me", async (request, reply) => {
-    // Formato "Bearer <token>". O nome do esquema não diferencia maiúsculas (RFC 7235).
-    const [scheme, token] = request.headers.authorization?.split(" ") ?? [];
-    if (scheme?.toLowerCase() !== "bearer" || !token) {
-      return unauthorized(reply);
-    }
-
-    // O try/catch cobre só a verificação do token: é a única falha que é culpa de quem chamou.
-    let userId: string;
-    try {
-      ({ userId } = await verifyAccessToken(token));
-    } catch {
-      return unauthorized(reply);
-    }
-
-    // Fora do try: se o banco falhar, o erro vai para o error handler (500 + log).
-    const [user] = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        email: users.email,
-        role: users.role,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-
-    // O token é válido, mas a conta foi apagada depois do login.
+    const user = await authenticate(request, db);
     if (!user) {
       return unauthorized(reply);
     }
@@ -135,7 +108,41 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
-// Resposta padrão para qualquer falha de autenticação: sem token, token inválido ou usuário inexistente.
+// Resposta padrão para qualquer falha de autenticação: sem token, token inválido ou revogado, ou usuário inexistente.
 function unauthorized(reply: FastifyReply) {
   return reply.code(401).header("WWW-Authenticate", "Bearer").send({ error: "Não autenticado" });
+}
+
+// Devolve o usuário dono do token, ou null se o token for inválido, estiver revogado ou a conta não existir.
+async function authenticate(request: FastifyRequest, db: Db) {
+  // Formato "Bearer <token>". O nome do esquema não diferencia maiúsculas (RFC 7235).
+  const [scheme, token] = request.headers.authorization?.split(" ") ?? [];
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
+    return null;
+  }
+
+  // O try/catch cobre só a verificação do token: é a única falha que é culpa de quem chamou.
+  let userId: string;
+  let tokenVersion: number;
+  try {
+    ({ userId, tokenVersion } = await verifyAccessToken(token));
+  } catch {
+    return null;
+  }
+
+  // Fora do try: se o banco falhar, o erro vai para o error handler (500 + log).
+  // Exigir a versão igual na mesma consulta é o que revoga tokens antigos; só sai daqui o que a rota pode expor.
+  const [user] = await db
+    .select({
+      id: users.id,
+      username: users.username,
+      email: users.email,
+      role: users.role,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.tokenVersion, tokenVersion)))
+    .limit(1);
+
+  return user ?? null;
 }
