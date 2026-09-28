@@ -60,10 +60,10 @@ src/
 │   └── schema.ts    # definição das tabelas (fonte das migrations)
 ├── lib/
 │   ├── password.ts  # hash e verificação de senha
-│   └── token.ts     # geração do JWT
+│   └── token.ts     # geração e verificação do JWT
 └── routes/
     ├── health.ts    # GET /health
-    └── auth.ts      # POST /auth/register e POST /auth/login
+    └── auth.ts      # POST /auth/register, POST /auth/login e GET /auth/me
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 ```
 
@@ -104,7 +104,7 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 5. ✅ **`POST /auth/register`**: valida, normaliza, gera hash, salva e trata duplicados (`409`).
 6. ✅ **Tratamento de erros**: error handler central; 5xx genérico para o cliente e detalhado no log.
 7. ✅ **`POST /auth/login`**: verifica a senha e devolve um JWT (`sub` = id do usuário, `role`, `exp`).
-8. ⬜ **`GET /auth/me`**: rota protegida que valida o token do header `Authorization: Bearer`.
+8. ✅ **`GET /auth/me`**: rota protegida; valida o token do header `Authorization: Bearer` e devolve os dados atuais do usuário.
 9. ⬜ **Testes automatizados**: fluxo feliz e principais erros de cada rota.
 
 ### Regras de segurança (verificar em toda mudança)

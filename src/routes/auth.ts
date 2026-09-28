@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken, verifyAccessToken } from "../lib/token.ts";
-import * as repl from "node:repl";
+
 
 // Validação e normalização do corpo da requisição.
 // O trim/toLowerCase roda antes da validação do email; a senha não é alterada.
@@ -90,18 +90,38 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
     const header = request.headers.authorization;
 
     if (!header || !header.startsWith("Bearer ")) {
-      return reply.code(401).header("WWW-Authenticate", "Bearer ").send({ error: "Não autenticado"})
+      return unauthorized(reply);
     }
 
     const token = header.slice("Bearer ".length);
 
+    // O try/catch cobre só a verificação do token: é a única falha que é culpa de quem chamou.
+    let userId: string;
     try {
-      const { userId, role } = await verifyAccessToken(token);
-      return reply.send({ userId, role})
-  } catch {
-      return reply.code(401).header("WWW-Authenticate", "Bearer ").send({ error: "Não autenticado"})
-  }
-});
+      ({ userId } = await verifyAccessToken(token));
+    } catch {
+      return unauthorized(reply);
+    }
+
+    // Fora do try: se o banco falhar, o erro vai para o error handler (500 + log).
+    const [user] = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          role: users.role,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+    // O token é válido, mas a conta foi apagada depois do login.
+    if (!user) {
+      return unauthorized(reply);
+    } return reply.send(user);
+  })
+}
 
 // 23505 é o código do Postgres para violação de UNIQUE.
 // O Drizzle embrulha o erro do driver, então o código fica em error.cause.
@@ -110,4 +130,9 @@ function isUniqueViolation(error: unknown): boolean {
   return (
     typeof pgError === "object" && pgError !== null && "code" in pgError && pgError.code === "23505"
   );
-}}
+}
+
+// Resposta padrão para qualquer falha de autenticação: sem token, token inválido ou usuário inexistente.
+function unauthorized(reply: FastifyReply) {
+  return reply.code(401).header("WWW-Authenticate", "Bearer").send({ error: "Não autenticado" });
+}
