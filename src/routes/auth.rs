@@ -1,8 +1,11 @@
 use argon2::{Argon2, PasswordHasher};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Json, Router, routing::post};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, Set, SqlErr};
 use serde::Deserialize;
-use sea_orm::DatabaseConnection;
+
+use crate::entities::users;
 
 #[derive(Deserialize)]
 struct RegisterRequest {
@@ -11,7 +14,10 @@ struct RegisterRequest {
     email: String,
 }
 
-async fn register(Json(payload): Json<RegisterRequest>) -> Result<String, (StatusCode, String)> {
+async fn register(
+    State(db): State<DatabaseConnection>,
+    Json(payload): Json<RegisterRequest>,
+) -> Result<(StatusCode, String), (StatusCode, String)> {
     // Normalização: tira espaços das pontas e deixa o email em minúsculas.
     // A senha NÃO é alterada: espaços e maiúsculas fazem parte dela.
     let username = payload.username.trim().to_string();
@@ -52,8 +58,31 @@ async fn register(Json(payload): Json<RegisterRequest>) -> Result<String, (Statu
         )
     })?;
 
-    // TEMPORÁRIO: o hash aparece na resposta só para teste. Na Parte 4 ele vai para o banco.
-    Ok(format!("Usuário {username} ({email})\nhash: {senha_hasheada}"))
+    // id, role e created_at ficam NotSet: o banco preenche com os DEFAULTs da migration.
+    let novo_usuario = users::ActiveModel {
+        username: Set(username),
+        email: Set(email),
+        password_hash: Set(senha_hasheada),
+        ..Default::default()
+    };
+
+    match novo_usuario.insert(&db).await {
+        // O insert devolve o Model completo, já com o id gerado pelo banco.
+        Ok(usuario) => Ok((
+            StatusCode::CREATED,
+            format!("Usuário {} criado com id {}", usuario.username, usuario.id),
+        )),
+        Err(erro) if matches!(erro.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => {
+            Err((
+                StatusCode::CONFLICT,
+                "Email ou username já cadastrado".to_string(),
+            ))
+        }
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Erro interno ao criar o usuário".to_string(),
+        )),
+    }
 }
 
 // No argon2 0.6, o hash_password já gera um salt aleatório por dentro.
