@@ -12,17 +12,17 @@ afterAll(async () => {
   await closeTestApp(app, db);
 });
 
+function postLogin(payload: object) {
+  return app.inject({ method: "POST", url: "/auth/login", payload });
+}
+
 describe("POST /auth/login", () => {
   test("responde 200 com um JWT de 1 hora para o usuário", async () => {
     // Arrange
     const { id } = await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: defaultUser.email, password: defaultUser.password },
-    });
+    const response = await postLogin({ email: defaultUser.email, password: defaultUser.password });
 
     // Assert
     expect(response.statusCode).toBe(200);
@@ -45,11 +45,7 @@ describe("POST /auth/login", () => {
     await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: "  JOAO@Email.COM ", password: defaultUser.password },
-    });
+    const response = await postLogin({ email: "  JOAO@Email.COM ", password: defaultUser.password });
 
     // Assert
     expect(response.statusCode).toBe(200);
@@ -60,11 +56,7 @@ describe("POST /auth/login", () => {
     await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: defaultUser.email, password: "senha-errada" },
-    });
+    const response = await postLogin({ email: defaultUser.email, password: "senha-errada" });
 
     // Assert
     expect(response.statusCode).toBe(401);
@@ -74,18 +66,10 @@ describe("POST /auth/login", () => {
   test("responde 401 com a MESMA mensagem quando o email não existe", async () => {
     // Arrange
     await registerUser(app);
-    const wrongPassword = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: defaultUser.email, password: "senha-errada" },
-    });
+    const wrongPassword = await postLogin({ email: defaultUser.email, password: "senha-errada" });
 
     // Act
-    const unknownEmail = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: "ninguem@email.com", password: "senha-errada" },
-    });
+    const unknownEmail = await postLogin({ email: "ninguem@email.com", password: "senha-errada" });
 
     // Assert: a resposta não pode revelar se o email tem conta.
     expect(unknownEmail.statusCode).toBe(wrongPassword.statusCode);
@@ -97,11 +81,7 @@ describe("POST /auth/login", () => {
     await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: defaultUser.email, password: defaultUser.password.toUpperCase() },
-    });
+    const response = await postLogin({ email: defaultUser.email, password: defaultUser.password.toUpperCase() });
 
     // Assert
     expect(response.statusCode).toBe(401);
@@ -112,7 +92,7 @@ describe("POST /auth/login", () => {
     ["senha vazia", { email: "joao@email.com", password: "" }, "Campo obrigatório ausente ou inválido"],
     ["email inválido", { email: "nao-e-email", password: "senha123" }, "Email inválido"],
   ])("responde 400 com %s", async (_caso, payload, error) => {
-    const response = await app.inject({ method: "POST", url: "/auth/login", payload });
+    const response = await postLogin(payload);
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error });

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { users } from "../src/db/schema.ts";
-import { closeTestApp, createTestApp, registerUser, resetDatabase } from "./helpers.ts";
+import { closeTestApp, createTestApp, defaultUser, registerUser, resetDatabase } from "./helpers.ts";
 
 const { app, db } = createTestApp();
 
@@ -15,14 +15,14 @@ afterAll(async () => {
   await closeTestApp(app, db);
 });
 
+function postRegister(payload: object) {
+  return app.inject({ method: "POST", url: "/auth/register", payload });
+}
+
 describe("POST /auth/register", () => {
   test("cria o usuário e responde 201", async () => {
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "joao", email: "joao@email.com", password: "senha123" },
-    });
+    const response = await postRegister(defaultUser);
 
     // Assert
     expect(response.statusCode).toBe(201);
@@ -34,18 +34,10 @@ describe("POST /auth/register", () => {
 
   test("responde 409 quando o email já está cadastrado", async () => {
     // Arrange
-    await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "joao", email: "joao@email.com", password: "senha123" },
-    });
+    await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "outro_nome", email: "joao@email.com", password: "outrasenha123" },
-    });
+    const response = await postRegister({ ...defaultUser, username: "outro_nome" });
 
     // Assert
     expect(response.statusCode).toBe(409);
@@ -54,11 +46,7 @@ describe("POST /auth/register", () => {
 
   test("responde 400 quando a senha tem menos de 8 caracteres", async () => {
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "marcos", email: "marcos@email.com", password: "123" },
-    });
+    const response = await postRegister({ ...defaultUser, password: "123" });
 
     // Assert
     expect(response.statusCode).toBe(400);
@@ -70,11 +58,7 @@ describe("POST /auth/register", () => {
     await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "joao", email: "outro@email.com", password: "senha123" },
-    });
+    const response = await postRegister({ ...defaultUser, email: "outro@email.com" });
 
     // Assert
     expect(response.statusCode).toBe(409);
@@ -86,11 +70,7 @@ describe("POST /auth/register", () => {
     await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "outro_nome", email: "  JOAO@Email.com ", password: "senha123" },
-    });
+    const response = await postRegister({ ...defaultUser, username: "outro_nome", email: "  JOAO@Email.com " });
 
     // Assert
     expect(response.statusCode).toBe(409);
@@ -98,11 +78,7 @@ describe("POST /auth/register", () => {
 
   test("normaliza o username: salva e devolve em minúsculas", async () => {
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "Joao", email: "joao@email.com", password: "senha123" },
-    });
+    const response = await postRegister({ ...defaultUser, username: "Joao" });
 
     // Assert
     expect(response.statusCode).toBe(201);
@@ -114,11 +90,7 @@ describe("POST /auth/register", () => {
     await registerUser(app);
 
     // Act
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { username: "Joao", email: "outro@email.com", password: "senha123" },
-    });
+    const response = await postRegister({ ...defaultUser, username: "Joao", email: "outro@email.com" });
 
     // Assert
     expect(response.statusCode).toBe(409);
@@ -127,33 +99,25 @@ describe("POST /auth/register", () => {
 
   test.each([
     ["corpo vazio", {}, "Campo obrigatório ausente ou inválido"],
-    ["email inválido", { username: "joao", email: "nao-e-email", password: "senha123" }, "Email inválido"],
-    [
-      "username curto",
-      { username: "jo", email: "joao@email.com", password: "senha123" },
-      "O username deve ter entre 3 e 50 caracteres",
-    ],
-    ["username com acento", { username: "joão", email: "joao@email.com", password: "senha123" }, USERNAME_FORMAT_ERROR],
-    ["username com espaço", { username: "jo ao", email: "joao@email.com", password: "senha123" }, USERNAME_FORMAT_ERROR],
+    ["email inválido", { ...defaultUser, email: "nao-e-email" }, "Email inválido"],
+    ["username curto", { ...defaultUser, username: "jo" }, "O username deve ter entre 3 e 50 caracteres"],
+    ["username com acento", { ...defaultUser, username: "joão" }, USERNAME_FORMAT_ERROR],
+    ["username com espaço", { ...defaultUser, username: "jo ao" }, USERNAME_FORMAT_ERROR],
     // "о" abaixo é a letra cirílica U+043E, visualmente igual ao "o" latino.
     [
       "username com letra cirílica parecida com latina",
-      { username: "j\u043eao", email: "joao@email.com", password: "senha123" },
+      { ...defaultUser, username: "j\u043eao" },
       USERNAME_FORMAT_ERROR,
     ],
     [
       "username com caractere invisível (zero-width space)",
-      { username: "joao\u200b", email: "joao@email.com", password: "senha123" },
+      { ...defaultUser, username: "joao\u200b" },
       USERNAME_FORMAT_ERROR,
     ],
-    ["username com hífen", { username: "joao-silva", email: "joao@email.com", password: "senha123" }, USERNAME_FORMAT_ERROR],
-    [
-      "campo com tipo errado",
-      { username: "joao", email: "joao@email.com", password: 12345678 },
-      "Campo obrigatório ausente ou inválido",
-    ],
+    ["username com hífen", { ...defaultUser, username: "joao-silva" }, USERNAME_FORMAT_ERROR],
+    ["campo com tipo errado", { ...defaultUser, password: 12345678 }, "Campo obrigatório ausente ou inválido"],
   ])("responde 400 com %s", async (_caso, payload, error) => {
-    const response = await app.inject({ method: "POST", url: "/auth/register", payload });
+    const response = await postRegister(payload);
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error });
@@ -171,12 +135,7 @@ describe("POST /auth/register", () => {
 
   test("ignora a role enviada na requisição: todo cadastro nasce como user", async () => {
     // Act
-    const { id } = await registerUser(app, {
-      username: "joao",
-      email: "joao@email.com",
-      password: "senha123",
-      role: "admin",
-    });
+    const { id } = await registerUser(app, { ...defaultUser, role: "admin" });
 
     // Assert
     const [user] = await db.select({ role: users.role }).from(users).where(eq(users.id, id));
