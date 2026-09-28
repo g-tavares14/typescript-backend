@@ -10,7 +10,7 @@ async fn main() {
 
     let pool = create_pool().await;
 
-    let app = Router::new().nest("/health", routes::healthcheck::health_route());
+    let app = Router::new().nest("/health", routes::healthcheck::health_route()).with_state(pool);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
