@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { SignJWT } from "jose";
+import { type JWTPayload, SignJWT } from "jose";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { users } from "../src/db/schema.ts";
 import {
@@ -27,6 +27,16 @@ function getMe(authorization?: string) {
 
 function base64url(value: object) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+// Segundos desde 1970, o formato das datas do JWT (iat e exp).
+function now() {
+  return Math.floor(Date.now() / 1000);
+}
+
+// Assina só os campos passados: cada teste mostra exatamente quais claims o token tem (ou não tem).
+function signToken(claims: JWTPayload, key = secretKey) {
+  return new SignJWT(claims).setProtectedHeader({ alg: "HS256" }).sign(key);
 }
 
 beforeEach(async () => {
@@ -100,7 +110,7 @@ describe("GET /auth/me", () => {
     const { id } = await registerUser(app);
     const token = await loginUser(app);
     const [header, , signature] = token.split(".");
-    const forgedPayload = base64url({ sub: id, ver: 0, role: "admin", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const forgedPayload = base64url({ sub: id, ver: 0, role: "admin", exp: now() + 3600 });
 
     // Act
     const response = await getMe(bearer(`${header}.${forgedPayload}.${signature}`));
@@ -112,11 +122,8 @@ describe("GET /auth/me", () => {
   test("responde 401 quando o token foi assinado com outro segredo", async () => {
     // Arrange
     const { id } = await registerUser(app);
-    const token = await new SignJWT({ ver: 0 })
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject(id)
-      .setExpirationTime("1h")
-      .sign(new TextEncoder().encode("outro-segredo-qualquer-com-mais-de-32-caracteres"));
+    const otherKey = new TextEncoder().encode("outro-segredo-qualquer-com-mais-de-32-caracteres");
+    const token = await signToken({ sub: id, ver: 0, exp: now() + 3600 }, otherKey);
 
     // Act + Assert
     expectUnauthorized(await getMe(bearer(token)));
@@ -125,7 +132,7 @@ describe("GET /auth/me", () => {
   test("responde 401 com token sem assinatura (alg: none)", async () => {
     // Arrange
     const { id } = await registerUser(app);
-    const payload = { sub: id, ver: 0, role: "admin", exp: Math.floor(Date.now() / 1000) + 3600 };
+    const payload = { sub: id, ver: 0, role: "admin", exp: now() + 3600 };
     const token = `${base64url({ alg: "none", typ: "JWT" })}.${base64url(payload)}.`;
 
     // Act + Assert
@@ -135,13 +142,7 @@ describe("GET /auth/me", () => {
   test("responde 401 com token expirado", async () => {
     // Arrange: token assinado com o segredo certo, mas vencido há 1 minuto.
     const { id } = await registerUser(app);
-    const now = Math.floor(Date.now() / 1000);
-    const token = await new SignJWT({ ver: 0 })
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject(id)
-      .setIssuedAt(now - 3660)
-      .setExpirationTime(now - 60)
-      .sign(secretKey);
+    const token = await signToken({ sub: id, ver: 0, iat: now() - 3660, exp: now() - 60 });
 
     // Act + Assert
     expectUnauthorized(await getMe(bearer(token)));
@@ -150,10 +151,7 @@ describe("GET /auth/me", () => {
   test("responde 401 com token sem expiração", async () => {
     // Arrange: assinado com o segredo certo, mas sem "exp" (valeria para sempre).
     const { id } = await registerUser(app);
-    const token = await new SignJWT({ ver: 0 })
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject(id)
-      .sign(secretKey);
+    const token = await signToken({ sub: id, ver: 0 });
 
     // Act + Assert
     expectUnauthorized(await getMe(bearer(token)));
@@ -161,11 +159,7 @@ describe("GET /auth/me", () => {
 
   test("responde 401 quando o 'sub' do token não é um id válido", async () => {
     // Arrange
-    const token = await new SignJWT({ ver: 0 })
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject("nao-e-uuid")
-      .setExpirationTime("1h")
-      .sign(secretKey);
+    const token = await signToken({ sub: "nao-e-uuid", ver: 0, exp: now() + 3600 });
 
     // Act + Assert
     expectUnauthorized(await getMe(bearer(token)));
@@ -184,11 +178,7 @@ describe("GET /auth/me", () => {
   test("responde 401 com token válido e bem assinado, mas sem 'ver'", async () => {
     // Arrange
     const { id } = await registerUser(app);
-    const token = await new SignJWT({})
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject(id)
-      .setExpirationTime("1h")
-      .sign(secretKey);
+    const token = await signToken({ sub: id, exp: now() + 3600 });
 
     // Act + Assert
     expectUnauthorized(await getMe(bearer(token)));
