@@ -22,9 +22,9 @@ export async function closeTestApp(app: TestApp, db: Db) {
   await db.$client.end();
 }
 
-// Apaga todos os usuários, para cada teste começar do zero.
+// Apaga todos os usuários e registros, para cada teste começar do zero.
 export async function resetDatabase(db: Db) {
-  await db.execute(sql`TRUNCATE TABLE users`);
+  await db.execute(sql`TRUNCATE TABLE users, transactions`);
 }
 
 export const defaultUser = { username: "joao", email: "joao@email.com", password: "senha123" };
