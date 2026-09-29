@@ -50,7 +50,22 @@ describe("POST /transactions", () => {
       description: "Almoço",
       date: "2026-09-29",
       createdAt: expect.any(String),
+      updatedAt: expect.any(String),
     });
+  });
+
+  test("registro recém-criado tem updatedAt igual ao createdAt (nunca null)", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+
+    // Act
+    const response = await postTransaction(validBody, bearer(token));
+
+    // Assert: created_at e updated_at usam o now() da mesma instrução, então saem idênticos.
+    const { createdAt, updatedAt } = response.json();
+    expect(updatedAt).toEqual(expect.any(String));
+    expect(updatedAt).toBe(createdAt);
   });
 
   test("salva o registro no banco com o user_id do token", async () => {
@@ -320,8 +335,29 @@ describe("GET /transactions", () => {
         description: "Almoço",
         date: "2026-09-29",
         createdAt: expect.any(String),
+        updatedAt: expect.any(String),
       },
     ]);
+  });
+
+  test("cada registro da lista traz updatedAt, igual ao createdAt quando nunca foi editado", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+    await createTransactions(token, [
+      { type: "income", amount: 100, description: "Um", date: "2026-09-01" },
+      { type: "expense", amount: 200, description: "Dois", date: "2026-09-02" },
+    ]);
+
+    // Act
+    const { transactions: list } = (await getTransactions(bearer(token))).json();
+
+    // Assert
+    expect(list).toHaveLength(2);
+    for (const item of list) {
+      expect(item.updatedAt).toEqual(expect.any(String));
+      expect(item.updatedAt).toBe(item.createdAt);
+    }
   });
 
   test("ordena por date mais recente primeiro e desempata por createdAt mais recente", async () => {

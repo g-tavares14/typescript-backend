@@ -51,6 +51,8 @@ export const transactions = pgTable(
     // Só o dia ("AAAA-MM-DD"), sem hora nem fuso. O modo padrão devolve string, sem conversão para Date.
     occurredOn: date("occurred_on").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Última alteração do registro. O banco só preenche na criação; a API é quem atualiza a cada edição.
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     // Defesa em profundidade: repetem regras que a API já valida.

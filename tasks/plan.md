@@ -1,73 +1,65 @@
-# Implementation Plan: Registros financeiros (entradas e saídas)
+# Implementation Plan: Editar e excluir registros financeiros
 
-Spec: [SPEC-transactions.md](../SPEC-transactions.md) (aprovada). Tarefas em [todo.md](todo.md).
-O plano anterior (endurecimento da autenticação) foi concluído e está no histórico do git (commit `6b94780`).
+Spec: [SPEC-transactions-update-delete.md](../SPEC-transactions-update-delete.md) (aprovada). Tarefas em [todo.md](todo.md).
+O plano anterior (registros financeiros: `POST`/`GET`) foi concluído e está no histórico do git (commit `21e1289`).
 
 ## Overview
 
-Criar a tabela `transactions` ligada a `users`, as rotas `POST /transactions` e `GET /transactions`
-(lista + totais, com filtro opcional por período) e, por último, trocar a chamada manual de
-`authenticate()` por um hook `onRequest` em todas as rotas protegidas. TDD em cada tarefa:
-teste falhando → código → `npm run typecheck` + `npm test` + `curl` → commit (com o pedido do dono).
+Acrescentar a coluna `updated_at` (migration `0004`) e expor `updatedAt` em todas as respostas com registro;
+depois criar `DELETE /transactions/:id` e `PATCH /transactions/:id` (atualização parcial), sempre filtrando por
+`user_id` do token na própria consulta. TDD em cada tarefa: teste falhando → código → `npm run typecheck` +
+`npm test` + `curl` → commit (com o pedido do dono).
 
 ## Grafo de dependências
 
 ```
-T1 tabela transactions + migration 0003 (+ resetDatabase)
- └── T2 POST /transactions: caminho feliz, 401, userId do token   (move badRequest para src/lib)
-      └── T3 POST /transactions: validação (todos os 400)
-           └── T4 GET /transactions: lista + totais + isolamento
-                └── T5 GET /transactions: filtro from/to
-                     └── T6 refatoração: authenticate() → hook onRequest (4 rotas protegidas)
-                          └── T7 documentação (AGENTS.md, spec, contrato para o front)
+T1 coluna updated_at + migration 0004 + updatedAt nas respostas de POST e GET
+ └── T2 DELETE /transactions/:id   (cria parseId e notFound, reaproveitados pelo PATCH)
+      └── T3 PATCH /transactions/:id: caminho feliz, updatedAt, isolamento, 404, 401
+           └── T4 PATCH /transactions/:id: validação (todos os 400)
+                └── T5 documentação (contrato do front, AGENTS.md, spec)
 ```
 
-Tudo é sequencial: T2–T5 mexem nos mesmos dois arquivos (`src/routes/transactions.ts` e
-`test/transactions.test.ts`) e T6 depende de todas as rotas protegidas já existirem com testes de 401.
+Tudo sequencial: T1–T4 mexem em `src/routes/transactions.ts`, e o `PATCH` precisa do `updated_at` (T1)
+e dos helpers de id (T2).
 
 ## Architecture Decisions
 
-- **Migration sozinha na T1.** É a parte de maior risco e a única irreversível no banco de dev: sai
-  primeiro e o SQL gerado é revisado antes de qualquer rota (fail fast).
-- **Fatias verticais por comportamento**: primeiro o `POST` que funciona (T2), depois as regras de
-  validação (T3), depois a leitura (T4) e o filtro (T5). Cada tarefa deixa a API funcionando e testável com `curl`.
-- **Totais calculados no banco numa consulta separada da lista**, com o mesmo `WHERE`
-  (`user_id` + período). Um `sum(...) FILTER (WHERE type = ...)` por tipo, `coalesce(..., 0)` e
-  `.mapWith(Number)`, porque o `sum` de `bigint` volta como `numeric`, que o `pg` entrega como string.
-  O `balance` é `income - expense` calculado em JS a partir dos dois números.
-- **Um helper de condições** (`userId` + `from`/`to`) é reaproveitado pela lista e pelos totais, para
-  que os dois nunca usem filtros diferentes. A condição `eq(transactions.userId, user.id)` fica sempre lá.
-- **`badRequest()` vai para `src/lib/`** na T2: passa a ter dois usos (`auth.ts` e `transactions.ts`).
-  A mensagem `required` ("Campo obrigatório ausente ou inválido") vai junto.
-- **Colunas públicas num objeto só** (`id`, `type`, `amount`, `description`, `date`, `createdAt`),
-  usado no `.returning()` e no `.select()`: a API nunca expõe `user_id` e os nomes da API
-  (`amount`, `date`) ficam mapeados num lugar só.
-- **Refatoração na T6 (opção A da spec)**, sem mudar comportamento:
-  - `requireAuth(db)` em `src/lib/authenticate.ts` devolve um hook `onRequest` que chama `authenticate()`,
-    responde `unauthorized()` se falhar e guarda o usuário em `request.user`.
-  - Hook no plugin inteiro em `users.ts` e `transactions.ts` (todas as rotas são protegidas);
-    na rota `/auth/logout`, `{ onRequest: requireAuth(db) }` (o plugin `/auth` tem rotas públicas).
-  - `onRequest` e não `preHandler` (decisão do dono na revisão da T6): o 401 vem antes do parse do corpo.
-  - `decorateRequest("user", null)` uma vez no `buildApp` + declaration merging
-    (`interface FastifyRequest { user: AuthenticatedUser | null }`).
-  - As rotas leem o usuário por um helper `currentUser(request)` que devolve `AuthenticatedUser` (sem `null`) e
-    **lança erro** se o hook não rodou. Assim o TypeScript não precisa do `!`, e se alguém esquecer o hook
-    a rota falha com 500 em vez de responder com dados de outra pessoa.
-  - Prova de que o comportamento não mudou: **nenhum teste existente é alterado** e todos continuam verdes.
+- **Migration sozinha no começo (T1)**, com revisão do SQL pelo dono antes do `db:migrate`: é a única parte
+  irreversível no banco de dev. O `drizzle-kit` gera só o `ADD COLUMN ... DEFAULT now() NOT NULL`; a `0004` ganha,
+  **antes de ser aplicada**, um `UPDATE "transactions" SET "updated_at" = "created_at";` logo em seguida (as linhas
+  antigas ficariam com o horário da migration). Editar a migration nova antes de aplicá-la é permitido; o
+  snapshot em `drizzle/meta` só descreve o schema e não muda com o `UPDATE`.
+- **T1 é uma fatia vertical completa**: coluna + `publicColumns.updatedAt` + testes. Assim o `POST` e o `GET`
+  já devolvem `updatedAt` antes de existir edição (`updatedAt === createdAt`, os dois do mesmo `now()` do insert).
+- **`DELETE` antes do `PATCH`**: é a rota mais simples e introduz o que as duas usam:
+  - `parseId(params)`: `z.object({ id: z.uuid() })`; id que não é UUID vira `undefined` → `404` sem ir ao banco
+    (conferido: `z.uuid()` do Zod 4.6 aceita o `crypto.randomUUID()`/`gen_random_uuid()` e recusa `"abc"`);
+  - `notFound(reply)`: `404` `{ "error": "Registro não encontrado" }`, local do `transactions.ts` (um só arquivo usa).
+- **Uma consulta por operação, com `id` e `user_id` no mesmo `WHERE`**: `UPDATE ... RETURNING` e
+  `DELETE ... RETURNING id`. Zero linhas = `404`, seja id inexistente, seja de outro usuário. Sem "ler e depois
+  gravar", então não há janela entre conferir o dono e alterar.
+- **Schema do `PATCH` = `createTransactionSchema.partial()` + `refine` "ao menos um campo"**. Conferido no Zod 4.6:
+  `{}` e `{ foo: 1 }` caem no refine; `null` no campo → `required`; `trim` e mensagens do `POST` mantidos; `null`/`[]`
+  na raiz → `INVALID_BODY`. Campos ausentes ficam fora do objeto de saída.
+- **`.set()` com os quatro campos mapeados (`amount` → `amountCents`, `date` → `occurredOn`) + `updatedAt: sql\`now()\``**.
+  Conferido no Drizzle 0.45 (`mapUpdateSet`): chaves `undefined` são descartadas, então só os campos enviados entram
+  no `SET`; como o `updatedAt` sempre vai, o `SET` nunca fica vazio. `now()` do banco, e não `new Date()` do Node:
+  o mesmo relógio do `createdAt`.
+- **Testes novos em `test/transactions-update-delete.test.ts`** (T2–T4): o `test/transactions.test.ts` já tem 540 linhas
+  e cobre `POST`/`GET`. Os testes de `updatedAt` no `POST`/`GET` (T1) ficam no `transactions.test.ts`.
 
 ## Risks and Mitigations
 
 | Risco | Impacto | Mitigação |
 |---|---|---|
-| `TRUNCATE TABLE users` passa a falhar por causa da chave estrangeira | Alto (todos os testes quebram) | T1 muda o `resetDatabase` para `TRUNCATE TABLE users, transactions` |
-| `drizzle-kit` gerar FK, `CHECK` ou índice diferente do esperado | Médio | Revisar o SQL da 0003 antes do `db:migrate`; nunca editar 0000–0002 |
-| Totais voltarem como string (`"1990"`) ou `null` sem registros | Médio (quebra o front) | Testes com `toEqual` e números exatos; caso "sem registros → 0" |
-| Vazamento entre usuários (esquecer o `WHERE user_id`) | Alto (dados financeiros) | Teste de isolamento com dois usuários na T4 e na T5; helper de condições único |
-| `from`/`to` inclusivos errados (`<` no lugar de `<=`) | Médio | Testes nos limites exatos do período |
-| Hook da T6 não cobrir alguma rota (encapsulamento, ordem de registro) | Alto | Os testes de 401 de `/users/me`, `/auth/logout` e `/transactions` falhariam; mais `curl` sem token em cada rota |
-| Declaration merging tipar `request.user` em rotas públicas | Baixo | `currentUser()` é o único jeito de ler; ele falha alto se não houver usuário |
-| Contrato novo mal entendido pelo front (centavos, `income`/`expense`) | Médio | Tabela de contrato na spec + resumo final na T7 |
+| Linhas antigas com `updated_at` = horário da migration | Médio | `UPDATE ... = created_at` na `0004` antes de aplicar; conferir no `psql` depois do `db:migrate` |
+| Teste de "`updatedAt` mudou" instável: `POST` e `PATCH` no mesmo milissegundo | Médio | No teste, recuar `created_at`/`updated_at` do registro direto no banco (ex.: `2026-01-01`) antes do `PATCH` e comparar com esse valor |
+| Esquecer o `user_id` no `WHERE` de `UPDATE`/`DELETE` | Alto | Teste de isolamento em cada rota: o B recebe `404` e o registro do A continua intacto (conferido pelo `GET` do A) |
+| `:id` não UUID chegar ao Postgres (`500`) | Médio | `parseId` antes da consulta; teste com `/transactions/abc` |
+| Rota nova mudar o `404` de `DELETE /transactions` (sem id) em `test/errors.test.ts:134` | Baixo | `/transactions/:id` não casa com `/transactions`; o teste existente tem de continuar verde sem mudança |
+| Testes que comparam o formato exato do registro (`transactions.test.ts:46` e `:315`) quebrarem | Baixo (esperado) | Ganham só `updatedAt: expect.any(String)`; nenhum outro teste existente muda |
 
 ## Open Questions
 
-Nenhuma: a opção A e a posição da refatoração foram decididas pelo dono.
+Nenhuma.

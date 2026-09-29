@@ -54,6 +54,7 @@ const publicColumns = {
   description: transactions.description,
   date: transactions.occurredOn,
   createdAt: transactions.createdAt,
+  updatedAt: transactions.updatedAt,
 };
 
 // Soma, no banco, os valores de um tipo. O sum de bigint volta como numeric, que o driver pg entrega como
