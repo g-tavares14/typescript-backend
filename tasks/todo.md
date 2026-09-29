@@ -22,7 +22,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - [x] SQL da `0004` revisado e aplicado no dev; typecheck + testes verdes
 - [x] Revisão do dono antes das rotas novas
 
-## Task 2: `DELETE /transactions/:id`
+## Task 2: `DELETE /transactions/:id` ✅
 - Aceite:
   - Registro do próprio usuário → `204` com corpo vazio; ele some do `GET` e dos totais.
   - `404` `Registro não encontrado` para: id inexistente, id de **outro usuário** (o registro do outro continua no `GET`
@@ -35,7 +35,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/routes/transactions.ts, test/transactions-update-delete.test.ts
 - Tamanho: S · Depende de: T1
 
-## Task 3: `PATCH /transactions/:id` (caminho feliz, isolamento e 404)
+## Task 3: `PATCH /transactions/:id` (caminho feliz, isolamento e 404) ✅
 - Aceite:
   - Só `description` → `200` com o registro inteiro: descrição nova, `type`, `amount` e `date` iguais. O mesmo para
     cada um dos outros campos sozinho e para os quatro juntos; o `GET` e o `summary` refletem a mudança
@@ -50,7 +50,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/routes/transactions.ts, test/transactions-update-delete.test.ts
 - Tamanho: S · Depende de: T2
 
-## Task 4: `PATCH /transactions/:id` (validação)
+## Task 4: `PATCH /transactions/:id` (validação) ✅
 - Aceite:
   - `{}` e corpo só com campos desconhecidos → `400` `Envie ao menos um campo para alterar`.
   - `null` e tipo JSON errado (`"amount": null`, `"amount": "1990"`, `"type": 123`) → `Campo obrigatório ausente ou inválido`.
@@ -64,9 +64,9 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Tamanho: S · Depende de: T3
 
 ## Checkpoint B (T2–T4)
-- [ ] typecheck + testes verdes (os antigos também)
-- [ ] `curl`: fluxo completo da spec (POST → PATCH parcial → GET → DELETE → GET) e segundo usuário com `404`
-- [ ] Revisão do dono antes da documentação
+- [x] typecheck + testes verdes (os antigos também)
+- [x] `curl`: fluxo completo da spec (POST → PATCH parcial → GET → DELETE → GET) e segundo usuário com `404`
+- [x] Revisão do dono antes da documentação
 
 ## Task 5: Documentação
 - Aceite:

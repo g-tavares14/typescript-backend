@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { transactions } from "../db/schema.ts";
@@ -36,6 +36,12 @@ const createTransactionSchema = z.object({
   date: dateField,
 }, INVALID_BODY);
 
+// PATCH: os mesmos campos e mensagens do POST, mas cada campo é opcional (campo ausente fica fora do objeto).
+// Com {} ou só campos desconhecidos sobra um objeto vazio, e o refine recusa.
+const updateTransactionSchema = createTransactionSchema
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, { error: "Envie ao menos um campo para alterar" });
+
 // Filtro do GET: as duas datas são opcionais e inclusivas. Mesma convenção do corpo do POST: tipo errado
 // (ex.: ?from=a&from=b, que o Fastify entrega como array) -> `required`; string que não é data -> DATE_ERROR.
 // O refine só roda depois que from e to passaram no dateField (com um campo inválido sai o DATE_ERROR dele),
@@ -57,6 +63,20 @@ const publicColumns = {
   updatedAt: transactions.updatedAt,
 };
 
+// O :id da URL. Se não for um UUID, devolve undefined e a rota responde 404 sem ir ao banco:
+// o Postgres recusaria o texto como uuid e a resposta seria um 500.
+const idParamsSchema = z.object({ id: z.uuid() });
+
+function parseId(params: unknown) {
+  const parsed = idParamsSchema.safeParse(params);
+  return parsed.success ? parsed.data.id : undefined;
+}
+
+// Mesma resposta para id inexistente, id inválido e registro de outro usuário: um 403 confirmaria que o id existe.
+function notFound(reply: FastifyReply) {
+  return reply.code(404).send({ error: "Registro não encontrado" });
+}
+
 // Soma, no banco, os valores de um tipo. O sum de bigint volta como numeric, que o driver pg entrega como
 // string ("525000"), e sem linhas o sum é NULL. Por isso: coalesce(..., 0) e mapWith(Number) para virar number.
 // Number() é exato aqui: a soma só perde precisão acima de 2^53 centavos (~R$ 90 trilhões), e cada registro
@@ -67,7 +87,7 @@ function totalOf(type: "income" | "expense") {
 }
 
 export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
-  // As duas rotas exigem login: o hook autentica antes de cada handler e o 401 sai dele.
+  // Todas as rotas do plugin exigem login: o hook autentica antes de cada handler e o 401 sai dele.
   app.addHook("onRequest", requireAuth(db));
 
   app.post("/", async (request, reply) => {
@@ -125,5 +145,54 @@ export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
       summary: { income, expense, balance: income - expense },
       transactions: list,
     });
+  });
+
+  app.patch("/:id", async (request, reply) => {
+    const user = currentUser(request);
+
+    const id = parseId(request.params);
+    if (!id) {
+      return notFound(reply);
+    }
+
+    const parsed = updateTransactionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return badRequest(reply, parsed.error);
+    }
+    const { type, amount, description, date } = parsed.data;
+
+    // Chave undefined fica fora do SET: só os campos enviados mudam. O updated_at sempre vai, com o now() do
+    // banco (o mesmo relógio do created_at), então o SET nunca fica vazio. id e user_id na mesma condição,
+    // numa consulta só: registro de outro usuário = 0 linhas = 404.
+    const [transaction] = await db
+      .update(transactions)
+      .set({ type, amountCents: amount, description, occurredOn: date, updatedAt: sql`now()` })
+      .where(and(eq(transactions.id, id), eq(transactions.userId, user.id)))
+      .returning(publicColumns);
+
+    if (!transaction) {
+      return notFound(reply);
+    }
+    return reply.send(transaction);
+  });
+
+  app.delete("/:id", async (request, reply) => {
+    const user = currentUser(request);
+
+    const id = parseId(request.params);
+    if (!id) {
+      return notFound(reply);
+    }
+
+    // id e user_id na mesma condição, numa consulta só: registro de outro usuário = 0 linhas = 404.
+    const deleted = await db
+      .delete(transactions)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, user.id)))
+      .returning({ id: transactions.id });
+
+    if (deleted.length === 0) {
+      return notFound(reply);
+    }
+    return reply.code(204).send();
   });
 };
