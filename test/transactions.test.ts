@@ -96,18 +96,106 @@ describe("POST /transactions", () => {
     expect(await db.select().from(transactions).where(eq(transactions.userId, b.id))).toHaveLength(0);
   });
 
-  test("responde 400 genérico quando o corpo não atende ao formato (validação detalhada é da T3)", async () => {
-    // Arrange
-    await registerUser(app);
-    const token = await loginUser(app);
+  describe("validação do corpo", () => {
+    const REQUIRED = "Campo obrigatório ausente ou inválido";
+    const TYPE_ERROR = "O tipo deve ser income ou expense";
+    const AMOUNT_ERROR = "O valor deve ser um número inteiro de centavos maior que zero";
+    const DESCRIPTION_ERROR = "A descrição deve ter entre 1 e 200 caracteres";
+    const DATE_ERROR = "Data inválida (use AAAA-MM-DD)";
 
-    // Act
-    const response = await postTransaction({ type: "expense" }, bearer(token));
+    // Um único usuário logado por teste; o "Arrange" dos casos abaixo é só montar o corpo.
+    async function postAsUser(payload: unknown) {
+      await registerUser(app);
+      const token = await loginUser(app);
+      return postTransaction(payload, bearer(token));
+    }
 
-    // Assert
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ error: "Campo obrigatório ausente ou inválido" });
-    expect(await db.select().from(transactions)).toHaveLength(0);
+    // Regra única, igual ao cadastro: campo ausente ou com tipo JSON errado -> `required`;
+    // tipo certo mas valor fora da regra -> mensagem específica do campo.
+    test.each([
+      ["type ausente", { ...validBody, type: undefined }],
+      ["amount ausente", { ...validBody, amount: undefined }],
+      ["description ausente", { ...validBody, description: undefined }],
+      ["date ausente", { ...validBody, date: undefined }],
+      ["corpo vazio", {}],
+      ["type numérico", { ...validBody, type: 123 }],
+      ["type nulo", { ...validBody, type: null }],
+      ["amount em string", { ...validBody, amount: "1990" }],
+      ["amount nulo", { ...validBody, amount: null }],
+      ["description numérica", { ...validBody, description: 5 }],
+      ["date numérica", { ...validBody, date: 20260929 }],
+    ])("responde 400 required e não grava nada: %s", async (_caso, payload) => {
+      // Act
+      const response = await postAsUser(payload);
+
+      // Assert
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: REQUIRED });
+      expect(await db.select().from(transactions)).toHaveLength(0);
+    });
+
+    test.each([
+      ["type fora de income/expense", { ...validBody, type: "foo" }, TYPE_ERROR],
+      ["type com maiúscula (o valor é exato)", { ...validBody, type: "Income" }, TYPE_ERROR],
+      ["amount 0", { ...validBody, amount: 0 }, AMOUNT_ERROR],
+      ["amount negativo", { ...validBody, amount: -1 }, AMOUNT_ERROR],
+      ["amount em reais (19.9)", { ...validBody, amount: 19.9 }, AMOUNT_ERROR],
+      ["amount acima de R$ 1 bilhão", { ...validBody, amount: 100_000_000_001 }, AMOUNT_ERROR],
+      ["description vazia", { ...validBody, description: "" }, DESCRIPTION_ERROR],
+      ["description só com espaços", { ...validBody, description: "   " }, DESCRIPTION_ERROR],
+      ["description com 201 caracteres", { ...validBody, description: "a".repeat(201) }, DESCRIPTION_ERROR],
+      ["date inexistente (2026-02-30)", { ...validBody, date: "2026-02-30" }, DATE_ERROR],
+      ["date no formato brasileiro", { ...validBody, date: "29/09/2026" }, DATE_ERROR],
+    ])("responde 400 com a mensagem do campo e não grava nada: %s", async (_caso, payload, message) => {
+      // Act
+      const response = await postAsUser(payload);
+
+      // Assert
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: message });
+      expect(await db.select().from(transactions)).toHaveLength(0);
+    });
+
+    test.each([
+      ["amount igual ao teto (R$ 1 bilhão)", { amount: 100_000_000_000 }],
+      ["amount 1 centavo", { amount: 1 }],
+      ["description com exatamente 200 caracteres", { description: "a".repeat(200) }],
+      ["date no futuro", { date: "2099-12-31" }],
+      ["type income", { type: "income" }],
+    ])("aceita o limite: %s", async (_caso, override) => {
+      // Act
+      const response = await postAsUser({ ...validBody, ...override });
+
+      // Assert
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toMatchObject(override);
+      expect(await db.select().from(transactions)).toHaveLength(1);
+    });
+
+    test("aplica trim na descrição antes de validar o tamanho e antes de salvar", async () => {
+      // Arrange: 200 caracteres úteis + espaços nas pontas só passam se o trim vier antes do max(200).
+      const description = "a".repeat(200);
+
+      // Act
+      const response = await postAsUser({ ...validBody, description: `  ${description}  ` });
+
+      // Assert
+      expect(response.statusCode).toBe(201);
+      expect(response.json().description).toBe(description);
+      const [row] = await db.select().from(transactions);
+      expect(row?.description).toBe(description);
+    });
+
+    test("salva a descrição sem os espaços das pontas", async () => {
+      // Act
+      const response = await postAsUser({ ...validBody, description: "  Almoço  " });
+
+      // Assert
+      expect(response.statusCode).toBe(201);
+      expect(response.json().description).toBe("Almoço");
+      const [row] = await db.select().from(transactions);
+      expect(row?.description).toBe("Almoço");
+    });
   });
 
   test("responde 401 sem o header Authorization e não grava nada", async () => {

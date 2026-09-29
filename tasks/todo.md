@@ -25,18 +25,18 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/routes/transactions.ts, src/app.ts, src/lib/validation.ts, src/routes/auth.ts, test/transactions.test.ts
 - Tamanho: M · Depende de: T1
 
-## Task 3: `POST /transactions` (validação)
+## Task 3: `POST /transactions` (validação) ✅
 - Aceite: todos os `400` da tabela da spec com as mensagens exatas: `type` fora de `income`/`expense`;
-  `amount` `0`, negativo, `19.9`, `"1990"` e acima de `100000000000`; `description` vazia/só espaços e com
-  201 caracteres (e `trim` aplicado ao salvar); `date` `2026-02-30` e `29/09/2026`; campo ausente → mensagem `required`.
+  `amount` `0`, negativo, `19.9` e acima de `100000000000`; `description` vazia/só espaços e com
+  201 caracteres (e `trim` aplicado ao salvar); `date` `2026-02-30` e `29/09/2026`; campo ausente ou com tipo JSON errado (ex.: `amount: "1990"`) → mensagem `required`.
 - Verificar: testes novos em `test/transactions.test.ts`; `npm test`; `curl` com um valor em reais (`19.9`) → 400.
 - Arquivos: src/routes/transactions.ts, test/transactions.test.ts
 - Tamanho: S · Depende de: T2
 
 ## Checkpoint A (T1–T3)
-- [ ] typecheck + testes verdes; migration aplicada no dev
-- [ ] `curl`: login → `POST` válido (201) → `POST` inválido (400) → `POST` sem token (401)
-- [ ] Revisão do dono antes de seguir para a leitura
+- [x] typecheck + testes verdes; migration aplicada no dev
+- [x] `curl`: login → `POST` válido (201) → `POST` inválido (400) → `POST` sem token (401)
+- [x] Revisão do dono antes de seguir para a leitura
 
 ## Task 4: `GET /transactions` (lista + totais)
 - Aceite:

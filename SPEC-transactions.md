@@ -31,11 +31,14 @@ Corpo:
 | Campo | Regra | Erro (`400`) |
 |---|---|---|
 | `type` | `"income"` (entrada) ou `"expense"` (saída) | `O tipo deve ser income ou expense` |
-| `amount` | inteiro em **centavos**, `> 0` e `<= 100000000000` (R$ 1 bilhão). `1990` = R$ 19,90. Rejeita `19.9`, `"1990"`, `0` e negativos | `O valor deve ser um número inteiro de centavos maior que zero` |
+| `amount` | inteiro em **centavos**, `> 0` e `<= 100000000000` (R$ 1 bilhão). `1990` = R$ 19,90. Rejeita `19.9`, `0` e negativos | `O valor deve ser um número inteiro de centavos maior que zero` |
 | `description` | texto; `trim()`; de 1 a 200 caracteres | `A descrição deve ter entre 1 e 200 caracteres` |
 | `date` | `AAAA-MM-DD` válida (rejeita `2026-02-30`); passado ou futuro | `Data inválida (use AAAA-MM-DD)` |
 
-- Campo ausente ou com tipo errado: `400` `{ "error": "Campo obrigatório ausente ou inválido" }` (a mesma mensagem do cadastro).
+- Campo ausente ou com tipo JSON errado: `400` `{ "error": "Campo obrigatório ausente ou inválido" }` (a mesma mensagem do cadastro).
+  Ex.: `amount: "1990"` (string), `amount: null`, `type: 123`, `description: 5`, `date: 20260929`.
+  A mensagem específica da tabela só vale quando o tipo JSON está certo e o valor fora da regra
+  (`type: "foo"`, `amount: 19.9`, `date: "29/09/2026"`).
 - Campos a mais (inclusive `userId`, `id`, `createdAt`) são ignorados.
 - Sucesso: `201` com o registro criado:
 

@@ -5,20 +5,30 @@ import { transactions } from "../db/schema.ts";
 import { authenticate, unauthorized } from "../lib/authenticate.ts";
 import { badRequest, required } from "../lib/validation.ts";
 
-// Regras da spec (SPEC-transactions.md). Por enquanto toda regra quebrada responde a mensagem genérica
-// `required`; as mensagens específicas de cada campo entram na T3.
+const AMOUNT_ERROR = "O valor deve ser um número inteiro de centavos maior que zero";
+const DESCRIPTION_ERROR = "A descrição deve ter entre 1 e 200 caracteres";
+
+// Regras da spec (SPEC-transactions.md), com a mesma convenção do cadastro:
+// campo ausente ou com tipo JSON errado -> `required`; tipo certo mas valor fora da regra -> mensagem do campo.
+// Nos campos de texto isso vem do z.string(required).pipe(...): o pipe só chega na segunda etapa se o valor
+// for uma string, então a mensagem específica nunca aparece para `type: 123` ou `date: 20260929`.
 // O z.object ignora campos que não estão aqui: um userId, id ou createdAt no corpo nunca chega ao insert.
 const createTransactionSchema = z.object({
-  type: z.enum(["income", "expense"], required),
-  // Centavos inteiros: 1990 = R$ 19,90. Rejeita 19.9, "1990", 0 e negativos; teto de R$ 1 bilhão.
+  type: z.string(required).pipe(z.enum(["income", "expense"], "O tipo deve ser income ou expense")),
+  // Centavos inteiros: 1990 = R$ 19,90. Rejeita 19.9, 0 e negativos; teto de R$ 1 bilhão.
+  // "1990" (string) cai no z.number(required): é tipo errado, não valor inválido.
   amount: z
     .number(required)
-    .int(required.error)
-    .positive(required.error)
-    .max(100_000_000_000, required.error),
-  description: z.string(required).trim().min(1, required.error).max(200, required.error),
+    .int(AMOUNT_ERROR)
+    .positive(AMOUNT_ERROR)
+    .max(100_000_000_000, AMOUNT_ERROR),
+  description: z
+    .string(required)
+    .trim()
+    .min(1, DESCRIPTION_ERROR)
+    .max(200, DESCRIPTION_ERROR),
   // AAAA-MM-DD válida (rejeita 2026-02-30). Continua string: sem Date, sem problema de fuso.
-  date: z.iso.date(required),
+  date: z.string(required).pipe(z.iso.date("Data inválida (use AAAA-MM-DD)")),
 });
 
 // Colunas que a API expõe (nunca o user_id). Aqui os nomes do banco viram os da API.
