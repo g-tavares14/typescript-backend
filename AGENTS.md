@@ -80,6 +80,12 @@ test/
 │                   # warn só com o code em FST_* sem mapeamento, 5xx genérico + log (inclusive via frameworkErrors)
 └── rate-limit.test.ts  # único que liga o rate limit, com os limites reais
 drizzle/             # migrations SQL geradas pelo drizzle-kit
+.claude/
+├── agents/          # implementador e revisor (Sonnet 5.5, esforço alto)
+├── skills/          # skills do projeto, copiadas do catálogo agent-skills e adaptáveis aqui
+├── references/      # checklists citados pelas skills
+├── catalog.md       # skills do catálogo ainda não instaladas (gerado; não editar)
+└── agent-skills.json  # de qual versão/commit do catálogo veio cada skill (gerado)
 ```
 
 ### Comandos úteis
@@ -106,6 +112,7 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 ## Decisões registradas
 
 - **TypeScript em vez de Rust**: decisão do dono, por relevância de mercado.
+- **Skills e agentes no próprio repo** (`.claude/`), não globais: o catálogo é o repositório `g-tavares14/agent-skills`, instalado pelo `/agent-skills:setup-project` (núcleo fixo, com `security-and-hardening`). A `spec` e a `plan` sugerem skills do `.claude/catalog.md`; só entram as aprovadas pelo dono (`/agent-skills:setup-project add <skill>`). Skills só deste projeto são criadas direto em `.claude/skills/`. Atalhos do fluxo: `/spec`, `/plan`, `/build`, `/verify`, `/review`.
 - **Fastify + Drizzle**: Fastify pela estrutura simples de rotas e bom suporte a TypeScript;
   Drizzle por ser leve, com sintaxe próxima de SQL e tipos inferidos direto do schema.
 - **Sem etapa de build**: o Node 22 executa `.ts` removendo os tipos; o `tsc` é usado só para verificar os tipos.

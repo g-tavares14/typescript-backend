@@ -1,0 +1,79 @@
+{
+  "skills": {
+    "build": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "code-review-and-quality": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "code-simplification": {
+      "category": "code-quality",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "incremental-implementation": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "plan": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "planning-and-task-breakdown": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "review": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "security-and-hardening": {
+      "category": "security",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "spec": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "spec-driven-development": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "test-driven-development": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    },
+    "verify": {
+      "category": "workflow",
+      "version": "2.0.0",
+      "commit": "f398509144e5cbcc7fd1f4195d56566165bd7a69",
+      "copied": "2026-09-29"
+    }
+  },
+  "catalog": {
+    "repository": "https://github.com/g-tavares14/agent-skills"
+  }
+}
