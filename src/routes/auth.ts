@@ -4,7 +4,7 @@ import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
-import { authenticate, unauthorized } from "../lib/authenticate.ts";
+import { currentUser, requireAuth } from "../lib/authenticate.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
 import { badRequest, required } from "../lib/validation.ts";
@@ -98,11 +98,9 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
   });
 
   // Logout em todos os dispositivos: subir a versão invalida todos os tokens já emitidos para o usuário.
-  app.post("/logout", async (request, reply) => {
-    const user = await authenticate(request, db);
-    if (!user) {
-      return unauthorized(reply);
-    }
+  // O requireAuth é só desta rota: register e login continuam públicos.
+  app.post("/logout", { onRequest: requireAuth(db) }, async (request, reply) => {
+    const user = currentUser(request);
 
     // O incremento é feito pelo banco (token_version + 1), não lendo o valor e somando em JS:
     // assim, dois logouts simultâneos não se atropelam e cada um conta.

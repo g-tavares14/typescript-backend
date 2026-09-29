@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { transactions } from "../db/schema.ts";
-import { authenticate, unauthorized } from "../lib/authenticate.ts";
+import { currentUser, requireAuth } from "../lib/authenticate.ts";
 import { badRequest, required } from "../lib/validation.ts";
 
 const AMOUNT_ERROR = "O valor deve ser um número inteiro de centavos maior que zero";
@@ -66,11 +66,11 @@ function totalOf(type: "income" | "expense") {
 }
 
 export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
+  // As duas rotas exigem login: o hook autentica antes de cada handler e o 401 sai dele.
+  app.addHook("onRequest", requireAuth(db));
+
   app.post("/", async (request, reply) => {
-    const user = await authenticate(request, db);
-    if (!user) {
-      return unauthorized(reply);
-    }
+    const user = currentUser(request);
 
     const parsed = createTransactionSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -89,10 +89,7 @@ export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
   });
 
   app.get("/", async (request, reply) => {
-    const user = await authenticate(request, db);
-    if (!user) {
-      return unauthorized(reply);
-    }
+    const user = currentUser(request);
 
     const parsed = listQuerySchema.safeParse(request.query);
     if (!parsed.success) {

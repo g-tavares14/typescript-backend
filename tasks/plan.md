@@ -7,7 +7,7 @@ O plano anterior (endurecimento da autenticação) foi concluído e está no his
 
 Criar a tabela `transactions` ligada a `users`, as rotas `POST /transactions` e `GET /transactions`
 (lista + totais, com filtro opcional por período) e, por último, trocar a chamada manual de
-`authenticate()` por um hook `preHandler` em todas as rotas protegidas. TDD em cada tarefa:
+`authenticate()` por um hook `onRequest` em todas as rotas protegidas. TDD em cada tarefa:
 teste falhando → código → `npm run typecheck` + `npm test` + `curl` → commit (com o pedido do dono).
 
 ## Grafo de dependências
@@ -18,7 +18,7 @@ T1 tabela transactions + migration 0003 (+ resetDatabase)
       └── T3 POST /transactions: validação (todos os 400)
            └── T4 GET /transactions: lista + totais + isolamento
                 └── T5 GET /transactions: filtro from/to
-                     └── T6 refatoração: authenticate() → hook preHandler (4 rotas protegidas)
+                     └── T6 refatoração: authenticate() → hook onRequest (4 rotas protegidas)
                           └── T7 documentação (AGENTS.md, spec, contrato para o front)
 ```
 
@@ -43,13 +43,14 @@ Tudo é sequencial: T2–T5 mexem nos mesmos dois arquivos (`src/routes/transact
   usado no `.returning()` e no `.select()`: a API nunca expõe `user_id` e os nomes da API
   (`amount`, `date`) ficam mapeados num lugar só.
 - **Refatoração na T6 (opção A da spec)**, sem mudar comportamento:
-  - `requireAuth(db)` em `src/lib/authenticate.ts` devolve um `preHandler` que chama `authenticate()`,
+  - `requireAuth(db)` em `src/lib/authenticate.ts` devolve um hook `onRequest` que chama `authenticate()`,
     responde `unauthorized()` se falhar e guarda o usuário em `request.user`.
   - Hook no plugin inteiro em `users.ts` e `transactions.ts` (todas as rotas são protegidas);
-    na rota `/auth/logout`, `{ preHandler: requireAuth(db) }` (o plugin `/auth` tem rotas públicas).
+    na rota `/auth/logout`, `{ onRequest: requireAuth(db) }` (o plugin `/auth` tem rotas públicas).
+  - `onRequest` e não `preHandler` (decisão do dono na revisão da T6): o 401 vem antes do parse do corpo.
   - `decorateRequest("user", null)` uma vez no `buildApp` + declaration merging
-    (`interface FastifyRequest { user: AuthUser | null }`).
-  - As rotas leem o usuário por um helper `currentUser(request)` que devolve `AuthUser` (sem `null`) e
+    (`interface FastifyRequest { user: AuthenticatedUser | null }`).
+  - As rotas leem o usuário por um helper `currentUser(request)` que devolve `AuthenticatedUser` (sem `null`) e
     **lança erro** se o hook não rodou. Assim o TypeScript não precisa do `!`, e se alguém esquecer o hook
     a rota falha com 500 em vez de responder com dados de outra pessoa.
   - Prova de que o comportamento não mudou: **nenhum teste existente é alterado** e todos continuam verdes.

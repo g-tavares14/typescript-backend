@@ -28,6 +28,10 @@ export function buildApp(db: Db, options: { logger?: boolean; rateLimit?: boolea
     return reply.code(statusCode).send({ error: error.message });
   });
 
+  // Campo do usuário autenticado em toda requisição, preenchido pelo requireAuth (src/lib/authenticate.ts).
+  // Começa como null (valor simples): o Fastify proíbe objeto aqui porque seria compartilhado entre requisições.
+  app.decorateRequest("user", null);
+
   // global: false = nenhuma rota é limitada por padrão; só as que declaram config.rateLimit (login e cadastro).
   // O plugin lança o objeto do errorResponseBuilder como erro, então o 429 passa pelo error handler acima
   // e sai no formato { error }: só a mensagem é trocada para português.

@@ -11,7 +11,7 @@ Nesta etapa só existem os dois tipos (entrada e saída). Categorias (alimentaç
 edição e exclusão ficam para depois.
 
 A etapa termina com uma refatoração sem mudança de comportamento: a chamada manual de `authenticate()`
-em cada rota protegida vira um hook `preHandler` (`requireAuth`).
+em cada rota protegida vira um hook `onRequest` (`requireAuth`), que roda antes do parse do corpo: quem não está autenticado recebe 401 sem que o corpo seja lido.
 
 ### Critérios de aceite (comportamento da API)
 
@@ -215,7 +215,7 @@ o hook `requireAuth(db)` do plugin faz a autenticação, e a rota lê o usuário
 
 Nenhuma.
 
-Decidido: **`authenticate()` explícito** nas rotas financeiras e troca por hook `preHandler` como
+Decidido: **`authenticate()` explícito** nas rotas financeiras e troca por hook `onRequest` (não `preHandler`: o 401 vem antes do parse do corpo) como
 **última tarefa de código desta etapa** (opção A). Motivos: uma mudança por vez para revisar, os testes de 401
 provam que a refatoração não abriu nenhuma rota, e com só 2 rotas financeiras o risco de esquecer
 a autenticação até lá é baixo.

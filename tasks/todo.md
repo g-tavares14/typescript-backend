@@ -62,17 +62,23 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - [x] `curl`: fluxo completo (entrada + saída → `GET` com o saldo certo; filtro de mês; segundo usuário vê lista vazia)
 - [x] Revisão do dono antes da refatoração
 
-## Task 6: Refatoração: `authenticate()` → hook `preHandler`
+## Task 6: Refatoração: `authenticate()` → hook `onRequest` ✅
 - Aceite:
   - `requireAuth(db)` e `currentUser(request)` em `src/lib/authenticate.ts`; `decorateRequest("user", null)`
     no `buildApp`; declaration merging de `FastifyRequest.user`.
-  - Hook no plugin inteiro em `users.ts` e `transactions.ts`; `{ preHandler: requireAuth(db) }` só em `/auth/logout`.
+  - Hook `onRequest` (e não `preHandler`: o 401 vem antes do parse do corpo, e o corpo de quem não está
+    autenticado nem é lido) no plugin inteiro em `users.ts` e `transactions.ts`; `{ onRequest: requireAuth(db) }`
+    só em `/auth/logout`.
   - Nenhum handler chama `authenticate()` ou `unauthorized()` diretamente.
   - `/health`, `/auth/register` e `/auth/login` continuam públicas.
   - **Nenhum teste existente alterado**, e todos verdes.
-- Verificar: `npm run typecheck`; `npm test`; `git diff --stat test/` vazio; `curl` sem token nas 4 rotas
-  protegidas (401) e nas 3 públicas (sem 401).
-- Arquivos: src/lib/authenticate.ts, src/app.ts, src/routes/users.ts, src/routes/auth.ts, src/routes/transactions.ts
+  - Testes novos em `test/require-auth.test.ts`: `POST /transactions` e `POST /auth/logout` sem token e com JSON
+    malformado → `401`; `currentUser()` em rota sem o hook → `500` genérico; falha do banco dentro do hook → `500`
+    genérico, sem vazar a mensagem.
+- Verificar: `npm run typecheck`; `npm test`; `git diff --stat test/` só com o arquivo novo; `curl` sem token nas 4
+  rotas protegidas (401, inclusive `POST` com JSON malformado) e nas 3 públicas (sem 401).
+- Arquivos: src/lib/authenticate.ts, src/app.ts, src/routes/users.ts, src/routes/auth.ts, src/routes/transactions.ts,
+  test/require-auth.test.ts (novo)
 - Tamanho: M · Depende de: T5
 
 ## Task 7: Documentação
