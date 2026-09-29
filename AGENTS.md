@@ -30,7 +30,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 ## Contexto do projeto
 
-- **Etapa atual: registros financeiros** (entradas e saídas por usuário; spec em `SPEC-transactions.md`). A etapa de autenticação está concluída (roteiro abaixo, como histórico).
+- **Etapa atual: edição e exclusão de registros financeiros** (`PATCH` e `DELETE /transactions/:id` e o campo `updatedAt`; spec em `SPEC-transactions-update-delete.md`, continuação de `SPEC-transactions.md`). As etapas de autenticação e de registros financeiros (`POST`/`GET`) estão concluídas (roteiros abaixo, como histórico).
 - O projeto começou em Rust e foi migrado para TypeScript. A versão em Rust está na tag `versao-rust`.
 
 ### Stack
@@ -69,12 +69,13 @@ src/
     ├── health.ts    # GET /health
     ├── auth.ts      # POST /auth/register, /auth/login e /auth/logout
     ├── users.ts     # GET /users/me
-    └── transactions.ts  # POST /transactions e GET /transactions (lista + totais, filtro from/to)
+    └── transactions.ts  # POST, GET (lista + totais, filtro from/to), PATCH /:id (parcial) e DELETE /:id
 test/
 ├── global-setup.ts  # cria o banco de testes (_test) e aplica as migrations
 ├── helpers.ts       # createTestApp (rate limit desligado por padrão) e atalhos de cadastro/login
 ├── register.test.ts, login.test.ts, users-me.test.ts, logout.test.ts
 ├── transactions.test.ts  # POST e GET /transactions (validação, totais, ordem, filtro, isolamento, 401)
+├── transactions-update-delete.test.ts  # PATCH e DELETE /transactions/:id (parcial, updatedAt, validação, ordem dos erros, isolamento, 404, 401)
 ├── require-auth.test.ts  # requireAuth roda antes do parse do corpo; currentUser sem hook; falha do banco no hook
 ├── errors.test.ts  # sendError: 4xx em português (corpo inválido, 404, 413, 415, URL malformada, 429, 401 antes do 400),
 │                   # warn só com o code em FST_* sem mapeamento, 5xx genérico + log (inclusive via frameworkErrors)
@@ -128,7 +129,12 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **Lista e totais em duas consultas, sem transação**: com um `POST` concorrente o `summary` pode ficar um registro fora de sincronia com a lista. Aceito pelo dono. Ambas usam a mesma condição `where` (usuário + `from`/`to`).
 - **`requireAuth` como hook `onRequest`, não `preHandler`**: o 401 vem antes do parse do corpo, e o corpo de quem não está autenticado nem é lido. Hook no plugin inteiro (`users.ts`, `transactions.ts`) ou na opção da rota (`/auth/logout`, porque o plugin `/auth` tem rotas públicas).
 - **`currentUser()` falha alto** (`throw` → 500 genérico + log) se chamado numa rota sem o hook, em vez de devolver `null`: esquecer o `requireAuth` aparece no primeiro teste.
-- **Convenção de erros de validação** (cadastro, `POST` e query do `GET`): tipo JSON errado, campo ausente ou query repetida (`?from=a&from=b`, que vira array) → `Campo obrigatório ausente ou inválido`; tipo certo com valor fora da regra → a mensagem do campo.
+- **`PATCH` parcial, não `PUT`**: no HTTP, `PUT` substitui o registro inteiro; aqui o front manda só os campos que mudam (`type`, `amount`, `description`, `date`, qualquer combinação; `null` não apaga nada e dá `400`). Schema = `createTransactionSchema.partial()` + `refine` "ao menos um campo".
+- **`404` igual para registro de outro usuário, inexistente, já excluído e `:id` não UUID** (`Registro não encontrado`), nunca `403`: o `403` confirmaria que o id existe. O `:id` não UUID vira `404` sem ir ao banco (o Postgres daria `500`).
+- **`updated_at` sem versão nem histórico**: só a data da última gravação (`now()` do banco, igual ao `created_at` em registro nunca editado). Edições simultâneas do mesmo campo: vale a última. Um `PATCH` com os mesmos valores também atualiza o `updated_at`; um `PATCH` recusado não altera nada.
+- **`0004` faz o backfill**: o `drizzle-kit` gera só o `ADD COLUMN ... DEFAULT now()`, que daria o horário da migration às linhas antigas; o `UPDATE "transactions" SET "updated_at" = "created_at"` foi acrescentado à migration **antes** de ela ser aplicada.
+- **`DELETE` definitivo**: apaga a linha (sem lixeira nem exclusão lógica). Sem corpo: o front não envia `Content-Type` (com `application/json` e sem corpo o Fastify responde `400`).
+- **Convenção de erros de validação** (cadastro, `POST`, `PATCH` e query do `GET`): tipo JSON errado, campo ausente ou query repetida (`?from=a&from=b`, que vira array) → `Campo obrigatório ausente ou inválido`; tipo certo com valor fora da regra → a mensagem do campo. No `PATCH`, campo ausente é permitido (só `null` ou tipo errado dão `required`) e nenhum dos quatro campos → `Envie ao menos um campo para alterar`.
 - **Todo erro 4xx sai em português, em `{ "error": "..." }`**, mapeado por `error.code` (nunca pelo texto da mensagem) num lugar só, `sendError()` em `src/lib/errors.ts`, usada nas duas portas de erro do Fastify (`setErrorHandler` e `frameworkErrors`, que cobre erros gerados antes de escolher a rota):
   - corpo que não é objeto JSON (ausente, vazio, malformado, `null`, `[]`, texto, `Content-Length` errado) → `400` `Corpo da requisição inválido: envie um objeto JSON` (constante `INVALID_BODY`, em `src/lib/validation.ts`, também usada como `error` na raiz dos `z.object` de corpo; as mensagens dos campos não mudam);
   - `415` (tipo de conteúdo), `413` (corpo > 1 MiB), `404` (`setNotFoundHandler`) e `400` de URL malformada (opção `frameworkErrors`) têm mensagem própria, sem repetir URL nem corpo;
@@ -168,6 +174,16 @@ Spec em `SPEC-transactions.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo
 6. ✅ **Refatoração da autenticação**: `authenticate()` virou o hook `onRequest` `requireAuth(db)` + `currentUser(request)`; `test/require-auth.test.ts` cobre a ordem (401 antes do parse do corpo).
 7. ✅ **Documentação**: este arquivo, a spec (critérios e resumo do contrato para o front) e o `todo.md`.
 
+## Roteiro da etapa de edição e exclusão
+
+Spec em `SPEC-transactions-update-delete.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
+
+1. ✅ **Coluna `updated_at`** (migration `0004`): `NOT NULL DEFAULT now()`, com `UPDATE ... SET updated_at = created_at` para as linhas antigas; `updatedAt` em todas as respostas com registro (`POST`, `GET`, `PATCH`).
+2. ✅ **`DELETE /transactions/:id`**: `204` sem corpo; `parseId()` (`z.uuid()`) e `notFound()` (`404` `Registro não encontrado`) criados no `transactions.ts`.
+3. ✅ **`PATCH /transactions/:id`** (caminho feliz): altera só os campos enviados (`SET` com o que veio + `updated_at = now()`), responde `200` com o registro inteiro; isolamento por usuário, `404` e `401`.
+4. ✅ **Validação do `PATCH`**: mesmas regras e mensagens do `POST` por campo, `Envie ao menos um campo para alterar` para corpo sem campos, campos extras ignorados, ordem dos erros (`401` → corpo do Fastify → `:id` → campos → `404`).
+5. ✅ **Documentação**: este arquivo, o contrato para o front em `SPEC-transactions.md` e os critérios da spec marcados.
+
 ### Regras de segurança (verificar em toda mudança)
 
 - Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais (cuidado com os parâmetros de consultas nos erros do Drizzle).
@@ -176,6 +192,6 @@ Spec em `SPEC-transactions.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo
 - `JWT_SECRET` vem do ambiente, nunca fica fixo no código. Tokens com expiração (`exp`).
 - Consultas sempre parametrizadas (o Drizzle faz isso); nunca montar SQL concatenando strings. No `sql\`...\``, só interpolar valores, nunca texto de SQL vindo de fora.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
-- Toda rota protegida usa `requireAuth` (hook no plugin ou na rota, `src/lib/authenticate.ts`) e lê o usuário com `currentUser()`: o hook confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição).
+- Toda rota protegida usa `requireAuth` (hook no plugin ou na rota, `src/lib/authenticate.ts`) e lê o usuário com `currentUser()`: o hook confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição); `UPDATE` e `DELETE` também: `id` e `user_id` na mesma condição, numa consulta só, sem "ler e depois gravar".
 - A troca de senha (futura) deve incrementar `token_version`, para derrubar os tokens emitidos com a senha antiga.
 - Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`).

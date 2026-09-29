@@ -165,6 +165,25 @@ describe("DELETE /transactions/:id", () => {
     expect(response.json()).toEqual(NOT_FOUND);
   });
 
+  // O DELETE não tem corpo: com content-type JSON e sem corpo, o Fastify recusa antes da rota (contrato do front).
+  test("content-type application/json sem corpo → 400, e o registro continua existindo", async () => {
+    // Arrange
+    const token = await createUserWithToken(userA);
+    const { id } = await createTransaction(token);
+
+    // Act
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/transactions/${id}`,
+      headers: { ...JSON_HEADERS, authorization: bearer(token) },
+    });
+
+    // Assert
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(INVALID_BODY);
+    expect((await listTransactions(token)).transactions.map((t) => t.id)).toEqual([id]);
+  });
+
   test("sem token → 401", async () => {
     const response = await deleteTransaction("00000000-0000-4000-8000-000000000000");
 
@@ -253,6 +272,22 @@ describe("PATCH /transactions/:id", () => {
     expect(list.summary).toEqual({ income: 2500, expense: 0, balance: 2500 });
     expect(list.transactions).toHaveLength(1);
     expect(list.transactions[0]).toMatchObject({ id, type: "income", amount: 2500 });
+  });
+
+  test("editar não faz o registro subir na lista (a ordem continua por date e createdAt)", async () => {
+    // Arrange: mesma date; o mais antigo é criado primeiro, então o mais novo vem antes na lista.
+    const token = await createUserWithToken(userA);
+    const older = await createTransaction(token, { ...validBody, description: "primeiro" });
+    const newer = await createTransaction(token, { ...validBody, description: "segundo" });
+    const before = (await listTransactions(token)).transactions.map((t) => t.id);
+    expect(before).toEqual([newer.id, older.id]);
+
+    // Act: edita o mais antigo (sem mudar a date).
+    await patchTransaction(older.id, { description: "primeiro (corrigido)" }, token);
+
+    // Assert
+    const after = (await listTransactions(token)).transactions.map((t) => t.id);
+    expect(after).toEqual(before);
   });
 
   describe("updatedAt", () => {

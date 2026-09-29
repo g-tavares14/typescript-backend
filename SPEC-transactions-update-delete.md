@@ -1,6 +1,6 @@
 # Spec: Editar e excluir registros financeiros
 
-Status: **aprovada pelo dono (2026-09-29).** Continuação de [SPEC-transactions.md](SPEC-transactions.md).
+Status: **concluída** (aprovada pelo dono em 2026-09-29). Continuação de [SPEC-transactions.md](SPEC-transactions.md).
 
 ## Objetivo
 
@@ -119,7 +119,8 @@ npm run dev
 src/db/schema.ts               # coluna updatedAt na tabela transactions
 drizzle/0004_*.sql (+ meta)    # nova migration (ADD COLUMN + UPDATE das linhas antigas)
 src/routes/transactions.ts     # publicColumns ganha updatedAt; schema parcial; rotas PATCH /:id e DELETE /:id no mesmo plugin
-test/transactions.test.ts      # testes novos; os 2 testes que conferem o formato exato do registro passam a esperar updatedAt
+test/transactions-update-delete.test.ts  # novo: testes do PATCH e do DELETE
+test/transactions.test.ts      # updatedAt no POST e no GET; os 2 testes que conferem o formato exato do registro passam a esperar updatedAt
 SPEC-transactions.md           # resumo do contrato para o front: updatedAt e as duas rotas
 AGENTS.md                      # estrutura, roteiro e decisões
 ```
@@ -192,14 +193,14 @@ app.patch("/:id", async (request, reply) => {
 
 ## Success Criteria
 
-- [ ] Todos os critérios de aceite acima com teste automatizado passando.
-- [ ] `npm run typecheck` e `npm test` verdes.
-- [ ] SQL da `0004` revisado (`ADD COLUMN` + `UPDATE` das linhas antigas) e aplicado no banco de dev; registros antigos com
+- [x] Todos os critérios de aceite acima com teste automatizado passando.
+- [x] `npm run typecheck` e `npm test` verdes.
+- [x] SQL da `0004` revisado (`ADD COLUMN` + `UPDATE` das linhas antigas) e aplicado no banco de dev; registros antigos com
       `updated_at = created_at`.
-- [ ] `curl` no servidor real: login → `POST` (`updatedAt` = `createdAt`) → `PATCH` só com `description` (200, demais campos
+- [x] `curl` no servidor real: login → `POST` (`updatedAt` = `createdAt`) → `PATCH` só com `description` (200, demais campos
       iguais, `updatedAt` novo) → `PATCH` só com `amount` → `GET` mostra os valores novos e o saldo certo → `DELETE` (204)
       → `GET` sem o registro; um segundo usuário recebe `404` no `PATCH` e no `DELETE` do registro do primeiro.
-- [ ] Contrato do front (`SPEC-transactions.md`) e `AGENTS.md` atualizados.
+- [x] Contrato do front (`SPEC-transactions.md`) e `AGENTS.md` atualizados.
 
 ## Resumo do contrato para o frontend (entra no `SPEC-transactions.md`)
 

@@ -68,7 +68,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - [x] `curl`: fluxo completo da spec (POST → PATCH parcial → GET → DELETE → GET) e segundo usuário com `404`
 - [x] Revisão do dono antes da documentação
 
-## Task 5: Documentação
+## Task 5: Documentação ✅
 - Aceite:
   - `SPEC-transactions.md`: resumo do contrato para o front com `updatedAt` nas respostas, `PATCH` e `DELETE`,
     o `404` `Registro não encontrado`, o `400` `Envie ao menos um campo para alterar` e o aviso do `DELETE` sem `Content-Type`.
@@ -80,5 +80,5 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Tamanho: S · Depende de: T4
 
 ## Checkpoint final
-- [ ] Todos os critérios de sucesso da spec marcados
-- [ ] Resumo das mudanças de contrato para o frontend
+- [x] Todos os critérios de sucesso da spec marcados
+- [x] Resumo das mudanças de contrato para o frontend

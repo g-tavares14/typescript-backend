@@ -1,6 +1,9 @@
 # Spec: Registros financeiros (entradas e saídas)
 
 Status: **concluída.** Plano em [tasks/plan.md](tasks/plan.md), tarefas em [tasks/todo.md](tasks/todo.md).
+Continuação (edição, exclusão e o campo `updatedAt`): [SPEC-transactions-update-delete.md](SPEC-transactions-update-delete.md).
+As seções antes do "Resumo do contrato para o frontend" descrevem a primeira etapa; o contrato atual é o Resumo (no fim deste arquivo),
+e o schema e as regras de edição e exclusão estão em `SPEC-transactions-update-delete.md`.
 
 ## Objetivo
 
@@ -8,7 +11,8 @@ Primeira etapa da parte financeira: cada usuário logado registra as próprias *
 e consulta os registros com os totais. Os registros de um usuário nunca aparecem para outro.
 
 Nesta etapa só existem os dois tipos (entrada e saída). Categorias (alimentação, salário...),
-edição e exclusão ficam para depois.
+edição e exclusão ficam para depois (feitas na etapa seguinte, ver
+[SPEC-transactions-update-delete.md](SPEC-transactions-update-delete.md)).
 
 A etapa termina com uma refatoração sem mudança de comportamento: a chamada manual de `authenticate()`
 em cada rota protegida vira um hook `onRequest` (`requireAuth`), que roda antes do parse do corpo: quem não está autenticado recebe 401 sem que o corpo seja lido.
@@ -49,7 +53,8 @@ Corpo:
   "amount": 1990,
   "description": "Almoço",
   "date": "2026-09-29",
-  "createdAt": "2026-09-29T14:03:12.345Z"
+  "createdAt": "2026-09-29T14:03:12.345Z",
+  "updatedAt": "2026-09-29T14:03:12.345Z"
 }
 ```
 
@@ -66,7 +71,7 @@ Corpo:
 {
   "summary": { "income": 500000, "expense": 120000, "balance": 380000 },
   "transactions": [
-    { "id": "...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "..." }
+    { "id": "...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "2026-09-29T14:03:12.345Z", "updatedAt": "2026-09-29T14:03:12.345Z" }
   ]
 }
 ```
@@ -187,7 +192,7 @@ o hook `requireAuth(db)` do plugin faz a autenticação, e a rota lê o usuário
 
 - **Sempre**: teste falhando antes do código; migration nova (nunca editar 0000–0002); revisar o SQL
   gerado antes de aplicar; `{ "error": ... }` em todos os erros; `user_id` só do token.
-- **Perguntar antes**: commits; qualquer dependência nova; rotas de editar/excluir ou categorias (fora do escopo).
+- **Perguntar antes**: commits; qualquer dependência nova; categorias (fora do escopo); editar e excluir estão em [SPEC-transactions-update-delete.md](SPEC-transactions-update-delete.md).
 - **Nunca**: aceitar `userId` da requisição; consultar `transactions` sem `WHERE user_id = <usuário do token>`;
   float para dinheiro; logar corpo de requisição com dados financeiros.
 
@@ -211,6 +216,8 @@ e vale 1 hora; depois do `POST /auth/logout` (em qualquer dispositivo) ele deixa
 |---|---|---|
 | `POST /transactions` | `201` com o registro criado | `400`, `401` |
 | `GET /transactions` (`?from=&to=` opcionais) | `200` com `summary` e `transactions` | `400`, `401` |
+| `PATCH /transactions/:id` (corpo só com os campos que mudam) | `200` com o registro inteiro atualizado | `400`, `401`, `404` |
+| `DELETE /transactions/:id` (sem corpo e sem `Content-Type`) | `204` sem corpo | `401`, `404` |
 
 **Regras dos dados**
 - **Valores em centavos, inteiros:** `1990` = R$ 19,90. Nada de `19.90` nem string (`"1990"`). Máximo `100000000000` (R$ 1 bilhão).
@@ -218,13 +225,15 @@ e vale 1 hora; depois do `POST /auth/logout` (em qualquer dispositivo) ele deixa
 - **`type`:** `"income"` (entrada) ou `"expense"` (saída), exatamente assim (minúsculas, em inglês).
 - **`description`:** de 1 a 200 caracteres (espaços nas pontas são removidos).
 - A resposta nunca traz `userId`. Campos a mais no corpo são ignorados.
+- **`createdAt` e `updatedAt`** (ISO 8601) vêm em todo registro devolvido. `updatedAt` é a data e a hora da última edição:
+  em registro nunca editado é **igual** ao `createdAt` (nunca `null`). Os dois vêm sempre do servidor; o front não os envia.
 
 **`POST /transactions`**
 ```json
 // request
 { "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29" }
 // 201
-{ "id": "0b6c...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "2026-09-29T14:03:12.345Z" }
+{ "id": "0b6c...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "2026-09-29T14:03:12.345Z", "updatedAt": "2026-09-29T14:03:12.345Z" }
 ```
 
 **`GET /transactions?from=2026-09-01&to=2026-09-30`**
@@ -233,25 +242,49 @@ e vale 1 hora; depois do `POST /auth/logout` (em qualquer dispositivo) ele deixa
 {
   "summary": { "income": 500000, "expense": 120000, "balance": 380000 },
   "transactions": [
-    { "id": "...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "..." }
+    { "id": "...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "...", "updatedAt": "..." }
   ]
 }
 ```
 `summary` sempre tem os três campos como número inteiro em centavos (`0` sem registros). `balance = income - expense` e pode ser negativo.
+
+**`PATCH /transactions/:id`**: corrige um registro. O id vai na URL; o corpo tem **só os campos que mudam** (qualquer combinação de
+`type`, `amount`, `description` e `date`, com as mesmas regras do `POST`). Campo não enviado continua como está; `null` não apaga nada
+(dá `400`). `id`, `userId`, `createdAt` e `updatedAt` no corpo são ignorados.
+```json
+// request: PATCH /transactions/0b6c...  (muda só a descrição)
+{ "description": "Almoço (corrigido)" }
+// 200: o registro inteiro, já atualizado (updatedAt novo, createdAt igual)
+{ "id": "0b6c...", "type": "expense", "amount": 1990, "description": "Almoço (corrigido)", "date": "2026-09-29", "createdAt": "2026-09-29T14:03:12.345Z", "updatedAt": "2026-09-30T09:15:40.120Z" }
+```
+Cada edição bem-sucedida grava um `updatedAt` novo, mesmo que os valores enviados sejam iguais aos atuais. Se duas edições mudarem o
+mesmo campo ao mesmo tempo, vale a última. Um `PATCH` recusado (`400` ou `404`) não altera nada.
+
+**`DELETE /transactions/:id`**: exclui o registro de vez (não há lixeira). Responde `204` sem corpo; excluir de novo o mesmo id dá `404`.
+**Não envie `Content-Type: application/json` no `DELETE`** (ele não tem corpo): com esse header e sem corpo o servidor responde
+`400` `Corpo da requisição inválido: envie um objeto JSON`.
+```
+DELETE /transactions/0b6c...   ->   204 (sem corpo)
+```
+
+Um registro de **outro usuário** responde igual a um id que não existe (`404`, nunca `403`). Na URL, um `:id` que não é UUID
+(ex.: `/transactions/abc`) também dá `404`.
 
 **Erros** (sempre `{ "error": "mensagem" }`)
 
 | Status | Quando | `error` |
 |---|---|---|
 | `401` | sem token, token inválido, expirado ou revogado (header `WWW-Authenticate: Bearer`) | `Não autenticado` |
-| `400` | campo ausente, tipo JSON errado (ex.: `amount` string) ou `from`/`to` repetido na query | `Campo obrigatório ausente ou inválido` |
+| `400` | campo ausente (no `PATCH`, campo ausente é permitido: só `null` ou tipo errado dão este erro), tipo JSON errado (ex.: `amount` string) ou `from`/`to` repetido na query | `Campo obrigatório ausente ou inválido` |
 | `400` | `type` fora de `income`/`expense` | `O tipo deve ser income ou expense` |
 | `400` | `amount` decimal, `0`, negativo ou acima do teto | `O valor deve ser um número inteiro de centavos maior que zero` |
 | `400` | `description` vazia, só espaços ou com mais de 200 caracteres | `A descrição deve ter entre 1 e 200 caracteres` |
 | `400` | `date`, `from` ou `to` que não é uma data AAAA-MM-DD válida (ex.: `2026-02-30`, `29/09/2026`) | `Data inválida (use AAAA-MM-DD)` |
 | `400` | `from` depois de `to` | `A data inicial deve ser anterior ou igual à final` |
+| `400` | `PATCH` sem nenhum dos campos `type`, `amount`, `description`, `date` (ex.: `{}` ou só campos desconhecidos) | `Envie ao menos um campo para alterar` |
 | `400` | corpo ausente, vazio, malformado ou que não é um objeto JSON (`null`, `[]`, `"x"`, `text/plain`) | `Corpo da requisição inválido: envie um objeto JSON` |
 | `400` | URL malformada (ex.: `/%E0%A4%A`) | `URL inválida` |
+| `404` | `PATCH`/`DELETE` de id inexistente, de outro usuário, já excluído ou que não é UUID | `Registro não encontrado` |
 | `404` | rota ou método inexistente | `Rota não encontrada` |
 | `413` | corpo maior que 1 MiB | `Corpo da requisição muito grande` |
 | `415` | `Content-Type` sem suporte (ex.: `application/xml`) | `Tipo de conteúdo não suportado (use application/json)` |
