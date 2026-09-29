@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
@@ -8,6 +8,11 @@ import { badRequest, required } from "../lib/validation.ts";
 
 const AMOUNT_ERROR = "O valor deve ser um número inteiro de centavos maior que zero";
 const DESCRIPTION_ERROR = "A descrição deve ter entre 1 e 200 caracteres";
+const DATE_ERROR = "Data inválida (use AAAA-MM-DD)";
+
+// AAAA-MM-DD válida (rejeita 2026-02-30). Continua string: sem Date, sem problema de fuso.
+// Usada no corpo do POST e na query do GET.
+const dateField = z.string(required).pipe(z.iso.date(DATE_ERROR));
 
 // Regras da spec (SPEC-transactions.md), com a mesma convenção do cadastro:
 // campo ausente ou com tipo JSON errado -> `required`; tipo certo mas valor fora da regra -> mensagem do campo.
@@ -28,9 +33,18 @@ const createTransactionSchema = z.object({
     .trim()
     .min(1, DESCRIPTION_ERROR)
     .max(200, DESCRIPTION_ERROR),
-  // AAAA-MM-DD válida (rejeita 2026-02-30). Continua string: sem Date, sem problema de fuso.
-  date: z.string(required).pipe(z.iso.date("Data inválida (use AAAA-MM-DD)")),
+  date: dateField,
 });
+
+// Filtro do GET: as duas datas são opcionais e inclusivas. Mesma convenção do corpo do POST: tipo errado
+// (ex.: ?from=a&from=b, que o Fastify entrega como array) -> `required`; string que não é data -> DATE_ERROR.
+// O refine só roda depois que from e to passaram no dateField (com um campo inválido sai o DATE_ERROR dele),
+// e AAAA-MM-DD ordena igual como texto e como data: por isso a comparação from <= to é direta, sem Date.
+const listQuerySchema = z
+  .object({ from: dateField.optional(), to: dateField.optional() })
+  .refine(({ from, to }) => !from || !to || from <= to, {
+    error: "A data inicial deve ser anterior ou igual à final",
+  });
 
 // Colunas que a API expõe (nunca o user_id). Aqui os nomes do banco viram os da API.
 const publicColumns = {
@@ -80,19 +94,31 @@ export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
       return unauthorized(reply);
     }
 
+    const parsed = listQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return badRequest(reply, parsed.error);
+    }
+    const { from, to } = parsed.data;
+
+    // Uma só condição para a lista e para os totais, então os dois sempre usam o mesmo filtro.
     // Toda consulta filtra por user_id (vindo do token): é o que isola um usuário do outro.
-    const ownedByUser = eq(transactions.userId, user.id);
+    // O and() ignora os undefined: sem from/to, sobra só o filtro por usuário.
+    const filter = and(
+      eq(transactions.userId, user.id),
+      from ? gte(transactions.occurredOn, from) : undefined,
+      to ? lte(transactions.occurredOn, to) : undefined,
+    );
 
     const [list, [totals]] = await Promise.all([
       db
         .select(publicColumns)
         .from(transactions)
-        .where(ownedByUser)
+        .where(filter)
         .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt)),
       db
         .select({ income: totalOf("income"), expense: totalOf("expense") })
         .from(transactions)
-        .where(ownedByUser),
+        .where(filter),
     ]);
 
     // Sem GROUP BY, o agregado sempre devolve exatamente uma linha (com 0 quando não há registros).

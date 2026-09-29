@@ -220,10 +220,10 @@ describe("POST /transactions", () => {
 });
 
 describe("GET /transactions", () => {
-  function getTransactions(authorization?: string) {
+  function getTransactions(authorization?: string, query = "") {
     return app.inject({
       method: "GET",
-      url: "/transactions",
+      url: `/transactions${query}`,
       headers: authorization === undefined ? {} : { authorization },
     });
   }
@@ -388,6 +388,136 @@ describe("GET /transactions", () => {
 
     // Assert
     expect(response.json()).toEqual({ summary: { income: 0, expense: 0, balance: 0 }, transactions: [] });
+  });
+
+  describe("filtro from/to", () => {
+    const REQUIRED = "Campo obrigatório ausente ou inválido";
+    const DATE_ERROR = "Data inválida (use AAAA-MM-DD)";
+    const RANGE_ERROR = "A data inicial deve ser anterior ou igual à final";
+
+    // Um registro logo antes, dois exatamente nos limites, um no meio e um logo depois de setembro.
+    const boundaryBodies = [
+      { type: "income", amount: 1000, description: "Antes", date: "2026-08-31" },
+      { type: "income", amount: 2000, description: "Limite inicial", date: "2026-09-01" },
+      { type: "expense", amount: 300, description: "Meio", date: "2026-09-15" },
+      { type: "expense", amount: 40, description: "Limite final", date: "2026-09-30" },
+      { type: "income", amount: 5, description: "Depois", date: "2026-10-01" },
+    ];
+
+    function descriptions(response: { json: () => { transactions: Array<{ description: string }> } }) {
+      return response.json().transactions.map((t) => t.description);
+    }
+
+    async function loggedInUserWithBoundaryTransactions() {
+      await registerUser(app);
+      const token = await loginUser(app);
+      await createTransactions(token, boundaryBodies);
+      return token;
+    }
+
+    test("from e to são inclusivos e os totais usam o mesmo filtro da lista", async () => {
+      // Arrange
+      const token = await loggedInUserWithBoundaryTransactions();
+
+      // Act
+      const response = await getTransactions(bearer(token), "?from=2026-09-01&to=2026-09-30");
+
+      // Assert: os limites entram; "Antes" e "Depois" ficam de fora da lista e da soma.
+      expect(response.statusCode).toBe(200);
+      expect(descriptions(response)).toEqual(["Limite final", "Meio", "Limite inicial"]);
+      expect(response.json().summary).toStrictEqual({ income: 2000, expense: 340, balance: 1660 });
+    });
+
+    test("só from: traz tudo dessa data em diante", async () => {
+      // Arrange
+      const token = await loggedInUserWithBoundaryTransactions();
+
+      // Act
+      const response = await getTransactions(bearer(token), "?from=2026-09-30");
+
+      // Assert
+      expect(descriptions(response)).toEqual(["Depois", "Limite final"]);
+      expect(response.json().summary).toStrictEqual({ income: 5, expense: 40, balance: -35 });
+    });
+
+    test("só to: traz tudo até essa data", async () => {
+      // Arrange
+      const token = await loggedInUserWithBoundaryTransactions();
+
+      // Act
+      const response = await getTransactions(bearer(token), "?to=2026-09-01");
+
+      // Assert
+      expect(descriptions(response)).toEqual(["Limite inicial", "Antes"]);
+      expect(response.json().summary).toStrictEqual({ income: 3000, expense: 0, balance: 3000 });
+    });
+
+    test("from igual a to: só os registros daquele dia", async () => {
+      // Arrange
+      const token = await loggedInUserWithBoundaryTransactions();
+
+      // Act
+      const response = await getTransactions(bearer(token), "?from=2026-09-15&to=2026-09-15");
+
+      // Assert
+      expect(descriptions(response)).toEqual(["Meio"]);
+      expect(response.json().summary).toStrictEqual({ income: 0, expense: 300, balance: -300 });
+    });
+
+    test("período sem registros: lista vazia e totais 0", async () => {
+      // Arrange
+      const token = await loggedInUserWithBoundaryTransactions();
+
+      // Act
+      const response = await getTransactions(bearer(token), "?from=2027-01-01&to=2027-01-31");
+
+      // Assert
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ summary: { income: 0, expense: 0, balance: 0 }, transactions: [] });
+    });
+
+    test("isolamento: com filtro, o usuário B continua sem ver nem somar os registros do A", async () => {
+      // Arrange
+      await registerUser(app);
+      const tokenA = await loginUser(app);
+      await registerUser(app, maria);
+      const tokenB = await loginUser(app, maria);
+      await createTransactions(tokenA, [{ type: "income", amount: 90000, description: "Do A", date: "2026-09-10" }]);
+      await createTransactions(tokenB, [{ type: "expense", amount: 700, description: "Do B", date: "2026-09-12" }]);
+
+      // Act
+      const response = await getTransactions(bearer(tokenB), "?from=2026-09-01&to=2026-09-30");
+
+      // Assert
+      expect(descriptions(response)).toEqual(["Do B"]);
+      expect(response.json().summary).toStrictEqual({ income: 0, expense: 700, balance: -700 });
+    });
+
+    test.each([
+      ["from com dia inexistente", "?from=2026-02-30", DATE_ERROR],
+      ["to com formato errado", "?to=29/09/2026", DATE_ERROR],
+      ["from vazio", "?from=", DATE_ERROR],
+      ["from com hora junto", "?from=2026-09-01T00:00:00Z", DATE_ERROR],
+      ["to inválido com from válido", "?from=2026-09-30&to=lixo", DATE_ERROR],
+      ["from repetido (vira array)", "?from=2026-09-01&from=2026-09-02", REQUIRED],
+      ["to repetido (vira array)", "?to=2026-09-01&to=2026-09-02", REQUIRED],
+      ["from depois de to", "?from=2026-09-30&to=2026-09-01", RANGE_ERROR],
+    ])("responde 400 para %s", async (_caso, query, message) => {
+      // Arrange
+      await registerUser(app);
+      const token = await loginUser(app);
+
+      // Act
+      const response = await getTransactions(bearer(token), query);
+
+      // Assert
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: message });
+    });
+
+    test("query inválida sem token responde 401 (a autenticação vem antes da validação)", async () => {
+      expectUnauthorized(await getTransactions(undefined, "?from=lixo"));
+    });
   });
 
   test("responde 401 sem o header Authorization", async () => {

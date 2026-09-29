@@ -49,7 +49,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/routes/transactions.ts, test/transactions.test.ts
 - Tamanho: S · Depende de: T3
 
-## Task 5: `GET /transactions` (filtro `from`/`to`)
+## Task 5: `GET /transactions` (filtro `from`/`to`) ✅
 - Aceite: `from` e `to` inclusivos (registros exatamente nos limites entram); só `from` ou só `to` funciona;
   os totais usam o mesmo filtro da lista; data inválida → `400` `Data inválida (use AAAA-MM-DD)`;
   `from` depois de `to` → `400` `A data inicial deve ser anterior ou igual à final`; o isolamento continua valendo com filtro.
