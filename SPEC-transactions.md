@@ -1,6 +1,6 @@
 # Spec: Registros financeiros (entradas e saídas)
 
-Status: **aprovada.** Plano em [tasks/plan.md](tasks/plan.md), tarefas em [tasks/todo.md](tasks/todo.md).
+Status: **concluída.** Plano em [tasks/plan.md](tasks/plan.md), tarefas em [tasks/todo.md](tasks/todo.md).
 
 ## Objetivo
 
@@ -143,7 +143,8 @@ AGENTS.md                      # etapa atual, estrutura, roteiro e decisões
 ## Code Style
 
 O mesmo das rotas atuais: schema Zod no topo, `safeParse` + `400` com a primeira mensagem,
-`authenticate()` no começo de cada rota, `returning` com só os campos que a API expõe.
+`returning` com só os campos que a API expõe. A autenticação mudou na T6: o exemplo abaixo é o
+**estilo da T2 a T5, antes da refatoração da T6** (`authenticate()` no começo de cada rota).
 
 ```ts
 app.post("/", async (request, reply) => {
@@ -192,14 +193,70 @@ o hook `requireAuth(db)` do plugin faz a autenticação, e a rota lê o usuário
 
 ## Success Criteria
 
-- [ ] Todos os critérios de aceite acima têm teste automatizado passando.
-- [ ] `npm run typecheck` e `npm test` verdes (os testes antigos continuam passando).
-- [ ] SQL da `0003` revisado (FK com cascade, dois `CHECK`s, índice) e aplicado no banco de dev sem erro.
-- [ ] `curl` no servidor real: login → 2 `POST` (entrada e saída) → `GET` mostra os dois e o saldo certo;
+- [x] Todos os critérios de aceite acima têm teste automatizado passando (`test/transactions.test.ts` e `test/require-auth.test.ts`).
+- [x] `npm run typecheck` e `npm test` verdes (os testes antigos continuam passando).
+- [x] SQL da `0003` revisado (FK com cascade, dois `CHECK`s, índice) e aplicado no banco de dev sem erro.
+- [x] `curl` no servidor real: login → 2 `POST` (entrada e saída) → `GET` mostra os dois e o saldo certo;
       um segundo usuário recebe lista vazia.
-- [ ] Refatoração: nenhum handler chama `authenticate()` diretamente; nenhum teste existente foi alterado
+- [x] Refatoração: nenhum handler chama `authenticate()` diretamente; nenhum teste existente foi alterado
       e todos continuam verdes.
-- [ ] AGENTS.md atualizado (etapa atual, estrutura, roteiro, decisões).
+- [x] AGENTS.md atualizado (etapa atual, estrutura, roteiro, decisões).
+
+## Resumo do contrato para o frontend
+
+Tudo abaixo exige `Authorization: Bearer <token>`. O token vem de `POST /auth/login` (`{ "token": "...", "tokenType": "Bearer", "expiresIn": 3600 }`)
+e vale 1 hora; depois do `POST /auth/logout` (em qualquer dispositivo) ele deixa de valer.
+
+| Rota | Sucesso | Erros |
+|---|---|---|
+| `POST /transactions` | `201` com o registro criado | `400`, `401` |
+| `GET /transactions` (`?from=&to=` opcionais) | `200` com `summary` e `transactions` | `400`, `401` |
+
+**Regras dos dados**
+- **Valores em centavos, inteiros:** `1990` = R$ 19,90. Nada de `19.90` nem string (`"1990"`). Máximo `100000000000` (R$ 1 bilhão).
+- **Datas `AAAA-MM-DD`,** sem hora nem fuso; mande a data local do usuário. Pode ser no futuro. `from` e `to` do filtro têm o mesmo formato e são inclusivos.
+- **`type`:** `"income"` (entrada) ou `"expense"` (saída), exatamente assim (minúsculas, em inglês).
+- **`description`:** de 1 a 200 caracteres (espaços nas pontas são removidos).
+- A resposta nunca traz `userId`. Campos a mais no corpo são ignorados.
+
+**`POST /transactions`**
+```json
+// request
+{ "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29" }
+// 201
+{ "id": "0b6c...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "2026-09-29T14:03:12.345Z" }
+```
+
+**`GET /transactions?from=2026-09-01&to=2026-09-30`**
+```json
+// 200: mais recente primeiro (empate: criado por último primeiro); os totais seguem o mesmo filtro
+{
+  "summary": { "income": 500000, "expense": 120000, "balance": 380000 },
+  "transactions": [
+    { "id": "...", "type": "expense", "amount": 1990, "description": "Almoço", "date": "2026-09-29", "createdAt": "..." }
+  ]
+}
+```
+`summary` sempre tem os três campos como número inteiro em centavos (`0` sem registros). `balance = income - expense` e pode ser negativo.
+
+**Erros** (sempre `{ "error": "mensagem" }`)
+
+| Status | Quando | `error` |
+|---|---|---|
+| `401` | sem token, token inválido, expirado ou revogado (header `WWW-Authenticate: Bearer`) | `Não autenticado` |
+| `400` | campo ausente, tipo JSON errado (ex.: `amount` string) ou `from`/`to` repetido na query | `Campo obrigatório ausente ou inválido` |
+| `400` | `type` fora de `income`/`expense` | `O tipo deve ser income ou expense` |
+| `400` | `amount` decimal, `0`, negativo ou acima do teto | `O valor deve ser um número inteiro de centavos maior que zero` |
+| `400` | `description` vazia, só espaços ou com mais de 200 caracteres | `A descrição deve ter entre 1 e 200 caracteres` |
+| `400` | `date`, `from` ou `to` que não é uma data AAAA-MM-DD válida (ex.: `2026-02-30`, `29/09/2026`) | `Data inválida (use AAAA-MM-DD)` |
+| `400` | `from` depois de `to` | `A data inicial deve ser anterior ou igual à final` |
+| `400` | corpo ausente, vazio, não-JSON ou que não é um objeto JSON (`null`, `[]`, `"x"`, `text/plain`) | mensagem em inglês (Fastify/Zod), por exemplo `Invalid input: expected object, received null`, `Body cannot be empty when content-type is set to 'application/json'` ou `Body is not valid JSON but content-type is set to 'application/json'`; não dependa do texto |
+| `500` | erro interno | `Erro interno do servidor` |
+
+Só as mensagens em português desta tabela são estáveis: para o `400` de corpo inválido, decida só pelo status, não pelo texto.
+Sem token, o `401` vem antes de qualquer `400`: a validação só roda para quem está autenticado.
+
+**Sem paginação:** `GET /transactions` devolve todos os registros do filtro de uma vez. Telas de listagem devem sempre enviar `from` e `to` (por exemplo, o mês exibido); sem filtro, a resposta cresce com o histórico inteiro do usuário.
 
 ## Premissas (corrija se alguma estiver errada)
 

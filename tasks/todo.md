@@ -81,7 +81,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
   test/require-auth.test.ts (novo)
 - Tamanho: M · Depende de: T5
 
-## Task 7: Documentação
+## Task 7: Documentação ✅
 - Aceite:
   - AGENTS.md: etapa atual (financeiro), estrutura (`transactions.ts`, `validation.ts`, teste novo),
     roteiro da etapa, decisões (centavos inteiros, `/transactions`, totais no banco, `requireAuth` como hook) e a
@@ -92,5 +92,5 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Tamanho: S · Depende de: T6
 
 ## Checkpoint final
-- [ ] Todos os critérios de sucesso da spec marcados
-- [ ] Resumo das mudanças de contrato para o frontend
+- [x] Todos os critérios de sucesso da spec marcados
+- [x] Resumo das mudanças de contrato para o frontend

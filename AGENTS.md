@@ -30,7 +30,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 ## Contexto do projeto
 
-- **Etapa atual: autenticação.**
+- **Etapa atual: registros financeiros** (entradas e saídas por usuário; spec em `SPEC-transactions.md`). A etapa de autenticação está concluída (roteiro abaixo, como histórico).
 - O projeto começou em Rust e foi migrado para TypeScript. A versão em Rust está na tag `versao-rust`.
 
 ### Stack
@@ -54,23 +54,27 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 ```
 src/
 ├── server.ts        # ponto de entrada: lê a config, conecta no banco, sobe o servidor
-├── app.ts           # monta o Fastify: error handler, rate limit e rotas
+├── app.ts           # monta o Fastify: error handler, campo `user` da requisição, rate limit e rotas
 ├── config.ts        # variáveis de ambiente (fail fast se faltar alguma)
 ├── db/
 │   ├── client.ts    # pool de conexões + Drizzle
 │   └── schema.ts    # definição das tabelas (fonte das migrations)
 ├── lib/
-│   ├── authenticate.ts  # authenticate() (token -> usuário) e unauthorized() (401 padrão)
+│   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user, ou 401 padrão) e currentUser(request)
 │   ├── password.ts  # hash e verificação de senha
-│   └── token.ts     # geração e verificação do JWT
+│   ├── token.ts     # geração e verificação do JWT
+│   └── validation.ts  # badRequest() (400 com a primeira mensagem do Zod) e a mensagem `required`
 └── routes/
     ├── health.ts    # GET /health
     ├── auth.ts      # POST /auth/register, /auth/login e /auth/logout
-    └── users.ts     # GET /users/me
+    ├── users.ts     # GET /users/me
+    └── transactions.ts  # POST /transactions e GET /transactions (lista + totais, filtro from/to)
 test/
 ├── global-setup.ts  # cria o banco de testes (_test) e aplica as migrations
 ├── helpers.ts       # createTestApp (rate limit desligado por padrão) e atalhos de cadastro/login
 ├── register.test.ts, login.test.ts, users-me.test.ts, logout.test.ts
+├── transactions.test.ts  # POST e GET /transactions (validação, totais, ordem, filtro, isolamento, 401)
+├── require-auth.test.ts  # requireAuth roda antes do parse do corpo; currentUser sem hook; falha do banco no hook
 └── rate-limit.test.ts  # único que liga o rate limit, com os limites reais
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 ```
@@ -108,11 +112,18 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **`/users/me` no lugar de `/auth/me`**: o usuário atual é um recurso, e `/auth` fica para as ações de sessão (cadastro, login, logout). Isso também deixa espaço para `PATCH /users/me` e `PUT /users/me/password`.
 - **Logout por `token_version`**: o JWT leva `ver` e só vale se for igual a `users.token_version`; o logout incrementa a coluna e derruba os tokens de todos os dispositivos, sem lista de tokens revogados.
 - **Username só `a-z0-9_`, salvo em minúsculas** (`CHECK` no banco): impede personificação com `Joao`/`joao`, acentos, letras parecidas de outros alfabetos e caracteres invisíveis; o `UNIQUE` vira case-insensitive.
+- **Valores em centavos inteiros** (`amount`, `bigint` no banco): nunca float para dinheiro; `19.9`, `0` e negativos dão `400`. O teto por registro é R$ 1 bilhão (`100000000000`). O front converte ao exibir e ao enviar.
+- **Rota `/transactions`** (e não `/users/me/transactions`): o recurso é sempre do usuário do token, como o `/users/me`.
+- **Totais calculados no banco** (`sum` com `FILTER` por tipo + `coalesce(..., 0)` + `.mapWith(Number)`): o `sum` de `bigint` volta como `numeric`, que o `pg` entrega como string. `Number()` é exato até 2^53 centavos (~R$ 90 trilhões).
+- **Lista e totais em duas consultas, sem transação**: com um `POST` concorrente o `summary` pode ficar um registro fora de sincronia com a lista. Aceito pelo dono. Ambas usam a mesma condição `where` (usuário + `from`/`to`).
+- **`requireAuth` como hook `onRequest`, não `preHandler`**: o 401 vem antes do parse do corpo, e o corpo de quem não está autenticado nem é lido. Hook no plugin inteiro (`users.ts`, `transactions.ts`) ou na opção da rota (`/auth/logout`, porque o plugin `/auth` tem rotas públicas).
+- **`currentUser()` falha alto** (`throw` → 500 genérico + log) se chamado numa rota sem o hook, em vez de devolver `null`: esquecer o `requireAuth` aparece no primeiro teste.
+- **Convenção de erros de validação** (cadastro, `POST` e query do `GET`): tipo JSON errado, campo ausente ou query repetida (`?from=a&from=b`, que vira array) → `Campo obrigatório ausente ou inválido`; tipo certo com valor fora da regra → a mensagem do campo. Vale quando o corpo é um objeto JSON: corpo ausente, vazio, não-JSON ou que não é objeto (`null`, `[]`, `"x"`) hoje sai em inglês (mensagem do Fastify/Zod). Pendência registrada, a corrigir em tarefa separada.
 - **Rate limit em memória, por IP** (login 5/min, cadastro 3/min): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
   Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
   Com mais de um processo, os contadores não são compartilhados: trocar o store por Redis.
 
-## Roteiro da etapa de autenticação
+## Roteiro da etapa de autenticação (concluída)
 
 1. ✅ **Servidor mínimo**: `GET /health`, verificando também o banco (200 / 503).
 2. ✅ **Configuração**: `DATABASE_URL` do ambiente, com fail fast.
@@ -129,6 +140,18 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
     - **Rate limit**: 5 logins e 3 cadastros por minuto por IP (`429` + `Retry-After`).
     - **Postgres**: porta publicada só em `127.0.0.1`.
 
+## Roteiro da etapa de registros financeiros
+
+Spec em `SPEC-transactions.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
+
+1. ✅ **Tabela `transactions`** (migration `0003`): FK para `users` com `ON DELETE CASCADE`, `CHECK` de `type` e de `amount_cents > 0`, índice `(user_id, occurred_on)`.
+2. ✅ **`POST /transactions`**: cria o registro com o `user_id` do token (`userId` no corpo é ignorado) e responde `201` sem expor o `user_id`; `badRequest()` e `required` foram para `src/lib/validation.ts`.
+3. ✅ **Validação do `POST`**: `type`, `amount` (centavos inteiros), `description` (com `trim`) e `date` (AAAA-MM-DD válida), com as mensagens da spec.
+4. ✅ **`GET /transactions`**: lista (data mais recente primeiro, desempate por `createdAt`) + `summary` (`income`, `expense`, `balance`) calculado no banco; isolado por usuário.
+5. ✅ **Filtro `from`/`to`** (inclusivos, um ou os dois): a lista e os totais usam a mesma condição; datas inválidas e `from` depois de `to` dão `400`.
+6. ✅ **Refatoração da autenticação**: `authenticate()` virou o hook `onRequest` `requireAuth(db)` + `currentUser(request)`; `test/require-auth.test.ts` cobre a ordem (401 antes do parse do corpo).
+7. ✅ **Documentação**: este arquivo, a spec (critérios e resumo do contrato para o front) e o `todo.md`.
+
 ### Regras de segurança (verificar em toda mudança)
 
 - Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais (cuidado com os parâmetros de consultas nos erros do Drizzle).
@@ -137,6 +160,6 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - `JWT_SECRET` vem do ambiente, nunca fica fixo no código. Tokens com expiração (`exp`).
 - Consultas sempre parametrizadas (o Drizzle faz isso); nunca montar SQL concatenando strings. No `sql\`...\``, só interpolar valores, nunca texto de SQL vindo de fora.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
-- Toda rota protegida usa `authenticate()` (`src/lib/authenticate.ts`): ela confere a assinatura, a expiração e a `token_version` do token.
+- Toda rota protegida usa `requireAuth` (hook no plugin ou na rota, `src/lib/authenticate.ts`) e lê o usuário com `currentUser()`: o hook confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição).
 - A troca de senha (futura) deve incrementar `token_version`, para derrubar os tokens emitidos com a senha antiga.
 - Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`).
