@@ -1,5 +1,5 @@
 import { DrizzleQueryError, eq, sql } from "drizzle-orm";
-import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
@@ -7,11 +7,10 @@ import { users } from "../db/schema.ts";
 import { authenticate, unauthorized } from "../lib/authenticate.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
+import { badRequest, required } from "../lib/validation.ts";
 
 // Validação e normalização do corpo da requisição.
 // O trim/toLowerCase roda antes da validação do email e do username; a senha não é alterada.
-const required = { error: "Campo obrigatório ausente ou inválido" };
-
 const emailSchema = z.string(required).trim().toLowerCase().pipe(z.email("Email inválido"));
 
 const registerSchema = z.object({
@@ -124,9 +123,4 @@ function isUniqueViolation(error: unknown): boolean {
     error.cause instanceof pg.DatabaseError &&
     error.cause.code === "23505"
   );
-}
-
-// A API responde só a primeira mensagem de validação.
-function badRequest(reply: FastifyReply, error: z.ZodError) {
-  return reply.code(400).send({ error: error.issues[0]?.message ?? "Dados inválidos" });
 }

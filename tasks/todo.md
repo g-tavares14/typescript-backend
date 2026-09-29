@@ -3,7 +3,7 @@
 Plano: [plan.md](plan.md). Spec: [SPEC-transactions.md](../SPEC-transactions.md).
 Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `curl` → commit (com o pedido do dono).
 
-## Task 1: Tabela `transactions` e migration 0003
+## Task 1: Tabela `transactions` e migration 0003 ✅
 - Aceite:
   - `transactions` no `schema.ts` como na spec: FK `user_id` → `users.id` `ON DELETE CASCADE`,
     `CHECK` de `type` e de `amount_cents > 0`, índice `(user_id, occurred_on)`; `type Transaction` exportado.
@@ -14,7 +14,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/db/schema.ts, drizzle/0003_transactions.sql (+ meta), test/helpers.ts
 - Tamanho: S · Depende de: nada
 
-## Task 2: `POST /transactions` (caminho feliz e autenticação)
+## Task 2: `POST /transactions` (caminho feliz e autenticação) ✅
 - Aceite:
   - Corpo válido → `201` com `{ id, type, amount, description, date, createdAt }` (sem `userId`).
   - O registro é salvo com o `user_id` do token; um `userId` de outro usuário no corpo é ignorado.
