@@ -218,3 +218,193 @@ describe("POST /transactions", () => {
     expect(await db.select().from(transactions)).toHaveLength(0);
   });
 });
+
+describe("GET /transactions", () => {
+  function getTransactions(authorization?: string) {
+    return app.inject({
+      method: "GET",
+      url: "/transactions",
+      headers: authorization === undefined ? {} : { authorization },
+    });
+  }
+
+  // Cria registros pelo POST de verdade, em ordem: o createdAt de cada um é posterior ao do anterior.
+  async function createTransactions(token: string, bodies: Array<Record<string, unknown>>) {
+    for (const body of bodies) {
+      const response = await postTransaction(body, bearer(token));
+      if (response.statusCode !== 201) {
+        throw new Error(`POST falhou no arrange do teste: ${response.statusCode} ${response.body}`);
+      }
+    }
+  }
+
+  const maria = { username: "maria", email: "maria@email.com", password: "senha123" };
+
+  test("sem registros: 200 com lista vazia e totais 0", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+
+    // Act
+    const response = await getTransactions(bearer(token));
+
+    // Assert
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      summary: { income: 0, expense: 0, balance: 0 },
+      transactions: [],
+    });
+  });
+
+  test("soma entradas e saídas e devolve os totais como number", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+    await createTransactions(token, [
+      { type: "income", amount: 500000, description: "Salário", date: "2026-09-05" },
+      { type: "income", amount: 25000, description: "Freela", date: "2026-09-10" },
+      { type: "expense", amount: 120000, description: "Aluguel", date: "2026-09-06" },
+    ]);
+
+    // Act
+    const { summary } = (await getTransactions(bearer(token))).json();
+
+    // Assert: 525000 entradas, 120000 saídas. toStrictEqual confere o tipo (number, não string).
+    expect(summary).toStrictEqual({ income: 525000, expense: 120000, balance: 405000 });
+  });
+
+  test("balance fica negativo quando as saídas são maiores que as entradas", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+    await createTransactions(token, [
+      { type: "income", amount: 10000, description: "Venda", date: "2026-09-05" },
+      { type: "expense", amount: 35000, description: "Mercado", date: "2026-09-06" },
+    ]);
+
+    // Act
+    const { summary } = (await getTransactions(bearer(token))).json();
+
+    // Assert
+    expect(summary).toStrictEqual({ income: 10000, expense: 35000, balance: -25000 });
+  });
+
+  test("só entradas: expense é 0 (e não null) e balance é a soma das entradas", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+    await createTransactions(token, [{ type: "income", amount: 7000, description: "Venda", date: "2026-09-05" }]);
+
+    // Act
+    const { summary } = (await getTransactions(bearer(token))).json();
+
+    // Assert
+    expect(summary).toStrictEqual({ income: 7000, expense: 0, balance: 7000 });
+  });
+
+  test("cada registro tem o formato público (sem userId)", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+    await createTransactions(token, [validBody]);
+
+    // Act
+    const response = await getTransactions(bearer(token));
+
+    // Assert
+    expect(response.json().transactions).toEqual([
+      {
+        id: expect.any(String),
+        type: "expense",
+        amount: 1990,
+        description: "Almoço",
+        date: "2026-09-29",
+        createdAt: expect.any(String),
+      },
+    ]);
+  });
+
+  test("ordena por date mais recente primeiro e desempata por createdAt mais recente", async () => {
+    // Arrange: inseridos fora de ordem; "B" e "C" têm a mesma data, e "C" foi criado depois de "B".
+    await registerUser(app);
+    const token = await loginUser(app);
+    await createTransactions(token, [
+      { type: "expense", amount: 100, description: "A antigo", date: "2026-09-01" },
+      { type: "expense", amount: 200, description: "B empate", date: "2026-09-20" },
+      { type: "expense", amount: 300, description: "C empate", date: "2026-09-20" },
+      { type: "income", amount: 400, description: "D recente", date: "2026-10-02" },
+    ]);
+
+    // Act
+    const { transactions: list } = (await getTransactions(bearer(token))).json();
+
+    // Assert
+    expect(list.map((t: { description: string }) => t.description)).toEqual([
+      "D recente",
+      "C empate",
+      "B empate",
+      "A antigo",
+    ]);
+  });
+
+  test("isolamento: o usuário B não vê nem soma os registros do A", async () => {
+    // Arrange
+    await registerUser(app);
+    const tokenA = await loginUser(app);
+    await registerUser(app, maria);
+    const tokenB = await loginUser(app, maria);
+    await createTransactions(tokenA, [
+      { type: "income", amount: 500000, description: "Salário do A", date: "2026-09-05" },
+      { type: "expense", amount: 1000, description: "Café do A", date: "2026-09-06" },
+    ]);
+    await createTransactions(tokenB, [{ type: "expense", amount: 2500, description: "Cinema do B", date: "2026-09-07" }]);
+
+    // Act
+    const responseA = await getTransactions(bearer(tokenA));
+    const responseB = await getTransactions(bearer(tokenB));
+
+    // Assert
+    expect(responseA.json().summary).toStrictEqual({ income: 500000, expense: 1000, balance: 499000 });
+    expect(responseA.json().transactions.map((t: { description: string }) => t.description)).toEqual([
+      "Café do A",
+      "Salário do A",
+    ]);
+    expect(responseB.json().summary).toStrictEqual({ income: 0, expense: 2500, balance: -2500 });
+    expect(responseB.json().transactions.map((t: { description: string }) => t.description)).toEqual([
+      "Cinema do B",
+    ]);
+  });
+
+  test("um usuário sem registros não vê os de outro (lista vazia e totais 0)", async () => {
+    // Arrange
+    await registerUser(app);
+    const tokenA = await loginUser(app);
+    await registerUser(app, maria);
+    const tokenB = await loginUser(app, maria);
+    await createTransactions(tokenA, [validBody]);
+
+    // Act
+    const response = await getTransactions(bearer(tokenB));
+
+    // Assert
+    expect(response.json()).toEqual({ summary: { income: 0, expense: 0, balance: 0 }, transactions: [] });
+  });
+
+  test("responde 401 sem o header Authorization", async () => {
+    expectUnauthorized(await getTransactions());
+  });
+
+  test("responde 401 com token inválido", async () => {
+    expectUnauthorized(await getTransactions(bearer("nao-e-um-jwt")));
+  });
+
+  test("responde 401 com token revogado pelo logout", async () => {
+    // Arrange
+    await registerUser(app);
+    const token = await loginUser(app);
+    await app.inject({ method: "POST", url: "/auth/logout", headers: { authorization: bearer(token) } });
+
+    // Act + Assert
+    expectUnauthorized(await getTransactions(bearer(token)));
+  });
+});

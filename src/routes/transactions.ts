@@ -1,3 +1,4 @@
+import { desc, eq, sql } from "drizzle-orm";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
@@ -41,6 +42,15 @@ const publicColumns = {
   createdAt: transactions.createdAt,
 };
 
+// Soma, no banco, os valores de um tipo. O sum de bigint volta como numeric, que o driver pg entrega como
+// string ("525000"), e sem linhas o sum é NULL. Por isso: coalesce(..., 0) e mapWith(Number) para virar number.
+// Number() é exato aqui: a soma só perde precisão acima de 2^53 centavos (~R$ 90 trilhões), e cada registro
+// tem no máximo R$ 1 bilhão.
+function totalOf(type: "income" | "expense") {
+  const total = sql`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.type} = ${type}), 0)`;
+  return total.mapWith(Number);
+}
+
 export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
   app.post("/", async (request, reply) => {
     const user = await authenticate(request, db);
@@ -62,5 +72,34 @@ export const transactionsRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
       .returning(publicColumns);
 
     return reply.code(201).send(transaction);
+  });
+
+  app.get("/", async (request, reply) => {
+    const user = await authenticate(request, db);
+    if (!user) {
+      return unauthorized(reply);
+    }
+
+    // Toda consulta filtra por user_id (vindo do token): é o que isola um usuário do outro.
+    const ownedByUser = eq(transactions.userId, user.id);
+
+    const [list, [totals]] = await Promise.all([
+      db
+        .select(publicColumns)
+        .from(transactions)
+        .where(ownedByUser)
+        .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt)),
+      db
+        .select({ income: totalOf("income"), expense: totalOf("expense") })
+        .from(transactions)
+        .where(ownedByUser),
+    ]);
+
+    // Sem GROUP BY, o agregado sempre devolve exatamente uma linha (com 0 quando não há registros).
+    const { income, expense } = totals!;
+    return reply.send({
+      summary: { income, expense, balance: income - expense },
+      transactions: list,
+    });
   });
 };

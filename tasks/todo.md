@@ -38,7 +38,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - [x] `curl`: login → `POST` válido (201) → `POST` inválido (400) → `POST` sem token (401)
 - [x] Revisão do dono antes de seguir para a leitura
 
-## Task 4: `GET /transactions` (lista + totais)
+## Task 4: `GET /transactions` (lista + totais) ✅
 - Aceite:
   - `200` com `{ summary: { income, expense, balance }, transactions: [...] }`; totais são `number`.
   - Sem registros → lista vazia e totais `0`.
