@@ -58,9 +58,9 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Tamanho: S · Depende de: T4
 
 ## Checkpoint B (T4–T5)
-- [ ] typecheck + testes verdes
-- [ ] `curl`: fluxo completo (entrada + saída → `GET` com o saldo certo; filtro de mês; segundo usuário vê lista vazia)
-- [ ] Revisão do dono antes da refatoração
+- [x] typecheck + testes verdes
+- [x] `curl`: fluxo completo (entrada + saída → `GET` com o saldo certo; filtro de mês; segundo usuário vê lista vazia)
+- [x] Revisão do dono antes da refatoração
 
 ## Task 6: Refatoração: `authenticate()` → hook `preHandler`
 - Aceite:
