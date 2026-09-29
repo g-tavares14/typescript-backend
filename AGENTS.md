@@ -63,7 +63,8 @@ src/
 │   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user, ou 401 padrão) e currentUser(request)
 │   ├── password.ts  # hash e verificação de senha
 │   ├── token.ts     # geração e verificação do JWT
-│   └── validation.ts  # badRequest() (400 com a primeira mensagem do Zod) e a mensagem `required`
+│   ├── validation.ts  # badRequest() (400 com a primeira mensagem do Zod), `required` e `INVALID_BODY`
+│   └── errors.ts    # sendError(): resposta de todo erro (4xx em português, por error.code; 5xx genérico + log)
 └── routes/
     ├── health.ts    # GET /health
     ├── auth.ts      # POST /auth/register, /auth/login e /auth/logout
@@ -75,6 +76,8 @@ test/
 ├── register.test.ts, login.test.ts, users-me.test.ts, logout.test.ts
 ├── transactions.test.ts  # POST e GET /transactions (validação, totais, ordem, filtro, isolamento, 401)
 ├── require-auth.test.ts  # requireAuth roda antes do parse do corpo; currentUser sem hook; falha do banco no hook
+├── errors.test.ts  # sendError: 4xx em português (corpo inválido, 404, 413, 415, URL malformada, 429, 401 antes do 400),
+│                   # warn só com o code em FST_* sem mapeamento, 5xx genérico + log (inclusive via frameworkErrors)
 └── rate-limit.test.ts  # único que liga o rate limit, com os limites reais
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 ```
@@ -118,10 +121,16 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **Lista e totais em duas consultas, sem transação**: com um `POST` concorrente o `summary` pode ficar um registro fora de sincronia com a lista. Aceito pelo dono. Ambas usam a mesma condição `where` (usuário + `from`/`to`).
 - **`requireAuth` como hook `onRequest`, não `preHandler`**: o 401 vem antes do parse do corpo, e o corpo de quem não está autenticado nem é lido. Hook no plugin inteiro (`users.ts`, `transactions.ts`) ou na opção da rota (`/auth/logout`, porque o plugin `/auth` tem rotas públicas).
 - **`currentUser()` falha alto** (`throw` → 500 genérico + log) se chamado numa rota sem o hook, em vez de devolver `null`: esquecer o `requireAuth` aparece no primeiro teste.
-- **Convenção de erros de validação** (cadastro, `POST` e query do `GET`): tipo JSON errado, campo ausente ou query repetida (`?from=a&from=b`, que vira array) → `Campo obrigatório ausente ou inválido`; tipo certo com valor fora da regra → a mensagem do campo. Vale quando o corpo é um objeto JSON: corpo ausente, vazio, não-JSON ou que não é objeto (`null`, `[]`, `"x"`) hoje sai em inglês (mensagem do Fastify/Zod). Pendência registrada, a corrigir em tarefa separada.
+- **Convenção de erros de validação** (cadastro, `POST` e query do `GET`): tipo JSON errado, campo ausente ou query repetida (`?from=a&from=b`, que vira array) → `Campo obrigatório ausente ou inválido`; tipo certo com valor fora da regra → a mensagem do campo.
+- **Todo erro 4xx sai em português, em `{ "error": "..." }`**, mapeado por `error.code` (nunca pelo texto da mensagem) num lugar só, `sendError()` em `src/lib/errors.ts`, usada nas duas portas de erro do Fastify (`setErrorHandler` e `frameworkErrors`, que cobre erros gerados antes de escolher a rota):
+  - corpo que não é objeto JSON (ausente, vazio, malformado, `null`, `[]`, texto, `Content-Length` errado) → `400` `Corpo da requisição inválido: envie um objeto JSON` (constante `INVALID_BODY`, em `src/lib/validation.ts`, também usada como `error` na raiz dos `z.object` de corpo; as mensagens dos campos não mudam);
+  - `415` (tipo de conteúdo), `413` (corpo > 1 MiB), `404` (`setNotFoundHandler`) e `400` de URL malformada (opção `frameworkErrors`) têm mensagem própria, sem repetir URL nem corpo;
+  - outro código `FST_*` → `Requisição inválida`, com o mesmo status, e loga só o código (`warn`, nunca URL, corpo ou a mensagem original); 4xx mapeados e 4xx sem código `FST_*` (ex.: o `429` do rate limit, que mantém a própria mensagem) não são logados;
+  - todo 5xx, inclusive os do próprio Fastify (ex.: `FST_ERR_ASYNC_CONSTRAINT`), sai `Erro interno do servidor` com o erro completo no log.
 - **Rate limit em memória, por IP** (login 5/min, cadastro 3/min): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
   Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
   Com mais de um processo, os contadores não são compartilhados: trocar o store por Redis.
+  Rotas inexistentes (`404`) não têm rate limit: varredura de rotas só é freada pelo que houver na frente (ex.: um proxy ou CDN).
 
 ## Roteiro da etapa de autenticação (concluída)
 

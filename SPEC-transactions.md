@@ -250,11 +250,17 @@ e vale 1 hora; depois do `POST /auth/logout` (em qualquer dispositivo) ele deixa
 | `400` | `description` vazia, só espaços ou com mais de 200 caracteres | `A descrição deve ter entre 1 e 200 caracteres` |
 | `400` | `date`, `from` ou `to` que não é uma data AAAA-MM-DD válida (ex.: `2026-02-30`, `29/09/2026`) | `Data inválida (use AAAA-MM-DD)` |
 | `400` | `from` depois de `to` | `A data inicial deve ser anterior ou igual à final` |
-| `400` | corpo ausente, vazio, não-JSON ou que não é um objeto JSON (`null`, `[]`, `"x"`, `text/plain`) | mensagem em inglês (Fastify/Zod), por exemplo `Invalid input: expected object, received null`, `Body cannot be empty when content-type is set to 'application/json'` ou `Body is not valid JSON but content-type is set to 'application/json'`; não dependa do texto |
+| `400` | corpo ausente, vazio, malformado ou que não é um objeto JSON (`null`, `[]`, `"x"`, `text/plain`) | `Corpo da requisição inválido: envie um objeto JSON` |
+| `400` | URL malformada (ex.: `/%E0%A4%A`) | `URL inválida` |
+| `404` | rota ou método inexistente | `Rota não encontrada` |
+| `413` | corpo maior que 1 MiB | `Corpo da requisição muito grande` |
+| `415` | `Content-Type` sem suporte (ex.: `application/xml`) | `Tipo de conteúdo não suportado (use application/json)` |
+| `4xx` | outro erro de requisição detectado pelo framework, sem mensagem própria | `Requisição inválida` |
+| `429` | muitas tentativas em `/auth/login` ou `/auth/register` (header `Retry-After`) | `Muitas tentativas. Tente novamente mais tarde.` |
 | `500` | erro interno | `Erro interno do servidor` |
 
-Só as mensagens em português desta tabela são estáveis: para o `400` de corpo inválido, decida só pelo status, não pelo texto.
-Sem token, o `401` vem antes de qualquer `400`: a validação só roda para quem está autenticado.
+Todos os erros `4xx` seguem este formato e estão em português; nenhuma mensagem repete a URL nem o corpo enviados.
+Sem token, o `401` vem antes de qualquer `400`, `413` ou `415` nas rotas protegidas: o corpo de quem não está autenticado nem é lido.
 
 **Sem paginação:** `GET /transactions` devolve todos os registros do filtro de uma vez. Telas de listagem devem sempre enviar `from` e `to` (por exemplo, o mês exibido); sem filtro, a resposta cresce com o histórico inteiro do usuário.
 

@@ -1,7 +1,7 @@
 import rateLimit from "@fastify/rate-limit";
-import { DrizzleQueryError } from "drizzle-orm";
 import Fastify, { type FastifyError } from "fastify";
 import type { Db } from "./db/client.ts";
+import { sendError } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
@@ -9,24 +9,15 @@ import { usersRoutes } from "./routes/users.ts";
 
 // rateLimit: false existe só para os testes (ver test/helpers.ts). O server.ts não passa a opção: fica ligado.
 export function buildApp(db: Db, options: { logger?: boolean; rateLimit?: boolean } = {}) {
-  const app = Fastify({ logger: options.logger ?? true });
+  // Todo erro sai por sendError (src/lib/errors.ts): 4xx com mensagem em português; 5xx completo no log e
+  // mensagem genérica para o cliente (sem detalhes internos).
+  // O frameworkErrors cobre os erros que o Fastify gera antes de escolher a rota (URL malformada, constraint
+  // assíncrona com falha): eles não passam pelo setErrorHandler.
+  const app = Fastify({ logger: options.logger ?? true, frameworkErrors: sendError });
+  app.setErrorHandler<FastifyError>(sendError);
 
-  // Erros 4xx mostram a mensagem; erros 5xx vão completos para o log
-  // e o cliente recebe só uma mensagem genérica (sem detalhes internos).
-  app.setErrorHandler<FastifyError>((error, request, reply) => {
-    const statusCode = error.statusCode ?? 500;
-    if (statusCode >= 500) {
-      // O DrizzleQueryError traz os parâmetros da consulta (email, hash da senha...).
-      // Para o log, registra só a consulta e o erro original do banco.
-      if (error instanceof DrizzleQueryError) {
-        request.log.error({ query: error.query, err: error.cause }, "Erro no banco de dados");
-      } else {
-        request.log.error(error);
-      }
-      return reply.code(500).send({ error: "Erro interno do servidor" });
-    }
-    return reply.code(statusCode).send({ error: error.message });
-  });
+  // Rota ou método inexistente. Não repete a URL pedida na resposta.
+  app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: "Rota não encontrada" }));
 
   // Campo do usuário autenticado em toda requisição, preenchido pelo requireAuth (src/lib/authenticate.ts).
   // Começa como null (valor simples): o Fastify proíbe objeto aqui porque seria compartilhado entre requisições.

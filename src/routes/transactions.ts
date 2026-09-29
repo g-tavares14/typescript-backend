@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { transactions } from "../db/schema.ts";
 import { currentUser, requireAuth } from "../lib/authenticate.ts";
-import { badRequest, required } from "../lib/validation.ts";
+import { badRequest, INVALID_BODY, required } from "../lib/validation.ts";
 
 const AMOUNT_ERROR = "O valor deve ser um número inteiro de centavos maior que zero";
 const DESCRIPTION_ERROR = "A descrição deve ter entre 1 e 200 caracteres";
@@ -34,7 +34,7 @@ const createTransactionSchema = z.object({
     .min(1, DESCRIPTION_ERROR)
     .max(200, DESCRIPTION_ERROR),
   date: dateField,
-});
+}, INVALID_BODY);
 
 // Filtro do GET: as duas datas são opcionais e inclusivas. Mesma convenção do corpo do POST: tipo errado
 // (ex.: ?from=a&from=b, que o Fastify entrega como array) -> `required`; string que não é data -> DATE_ERROR.

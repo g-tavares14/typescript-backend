@@ -7,7 +7,7 @@ import { users } from "../db/schema.ts";
 import { currentUser, requireAuth } from "../lib/authenticate.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
-import { badRequest, required } from "../lib/validation.ts";
+import { badRequest, INVALID_BODY, required } from "../lib/validation.ts";
 
 // Validação e normalização do corpo da requisição.
 // O trim/toLowerCase roda antes da validação do email e do username; a senha não é alterada.
@@ -26,14 +26,14 @@ const registerSchema = z.object({
     .regex(/^[a-z0-9_]+$/, "O username só pode ter letras sem acento, números e _"),
   email: emailSchema,
   password: z.string(required).min(8, "A senha deve ter no mínimo 8 caracteres"),
-});
+}, INVALID_BODY);
 
 // No login a senha não tem tamanho mínimo: a regra de 8 caracteres é do cadastro.
 // Se ela mudar no futuro, contas antigas com senhas menores continuam conseguindo entrar.
 const loginSchema = z.object({
   email: emailSchema,
   password: z.string(required).min(1, "Campo obrigatório ausente ou inválido"),
-});
+}, INVALID_BODY);
 
 // Limites por IP em login e cadastro, contra força bruta e consumo de memória:
 // cada hash argon2 usa 64 MiB de RAM, então muitas requisições simultâneas derrubariam o servidor.
