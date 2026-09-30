@@ -1,65 +1,76 @@
-# Implementation Plan: Editar e excluir registros financeiros
+# Implementation Plan: Editar e excluir a própria conta
 
-Spec: [SPEC-transactions-update-delete.md](../SPEC-transactions-update-delete.md) (aprovada). Tarefas em [todo.md](todo.md).
-O plano anterior (registros financeiros: `POST`/`GET`) foi concluído e está no histórico do git (commit `21e1289`).
+Spec: [SPEC-users-update-delete.md](../SPEC-users-update-delete.md) (aprovada). Tarefas em [todo.md](todo.md).
+O plano anterior (edição e exclusão de registros financeiros) foi concluído e está no histórico do git (commit `45607bd`).
 
 ## Overview
 
-Acrescentar a coluna `updated_at` (migration `0004`) e expor `updatedAt` em todas as respostas com registro;
-depois criar `DELETE /transactions/:id` e `PATCH /transactions/:id` (atualização parcial), sempre filtrando por
-`user_id` do token na própria consulta. TDD em cada tarefa: teste falhando → código → `npm run typecheck` +
+Criar `PATCH /users/me` (altera `username` e/ou `email`, com as regras do cadastro e `409` para duplicado) e
+`DELETE /users/me` (senha atual no corpo, `204`, apaga a conta e os registros pelo `CASCADE`), as duas com rate limit
+por IP. Sem migration e sem dependência nova. TDD em cada tarefa: teste falhando → código → `npm run typecheck` +
 `npm test` + `curl` → commit (com o pedido do dono).
 
 ## Grafo de dependências
 
 ```
-T1 coluna updated_at + migration 0004 + updatedAt nas respostas de POST e GET
- └── T2 DELETE /transactions/:id   (cria parseId e notFound, reaproveitados pelo PATCH)
-      └── T3 PATCH /transactions/:id: caminho feliz, updatedAt, isolamento, 404, 401
-           └── T4 PATCH /transactions/:id: validação (todos os 400)
-                └── T5 documentação (contrato do front, AGENTS.md, spec)
+T1 regras de username/email e isUniqueViolation num lugar compartilhado (refatoração, sem mudar comportamento)
+ └── T2 PATCH /users/me: caminho feliz, 409, 401
+      └── T3 PATCH /users/me: validação (todos os 400)
+           └── T4 DELETE /users/me: senha, 204 + CASCADE, 403, 400, 401
+                └── T5 rate limit nas duas rotas
+                     └── T6 documentação (AGENTS.md, spec)
 ```
 
-Tudo sequencial: T1–T4 mexem em `src/routes/transactions.ts`, e o `PATCH` precisa do `updated_at` (T1)
-e dos helpers de id (T2).
+Tudo sequencial: T2–T5 mexem em `src/routes/users.ts`. T4 não depende da lógica do `PATCH`, mas vem depois para
+não haver duas tarefas abertas no mesmo arquivo.
 
 ## Architecture Decisions
 
-- **Migration sozinha no começo (T1)**, com revisão do SQL pelo dono antes do `db:migrate`: é a única parte
-  irreversível no banco de dev. O `drizzle-kit` gera só o `ADD COLUMN ... DEFAULT now() NOT NULL`; a `0004` ganha,
-  **antes de ser aplicada**, um `UPDATE "transactions" SET "updated_at" = "created_at";` logo em seguida (as linhas
-  antigas ficariam com o horário da migration). Editar a migration nova antes de aplicá-la é permitido; o
-  snapshot em `drizzle/meta` só descreve o schema e não muda com o `UPDATE`.
-- **T1 é uma fatia vertical completa**: coluna + `publicColumns.updatedAt` + testes. Assim o `POST` e o `GET`
-  já devolvem `updatedAt` antes de existir edição (`updatedAt === createdAt`, os dois do mesmo `now()` do insert).
-- **`DELETE` antes do `PATCH`**: é a rota mais simples e introduz o que as duas usam:
-  - `parseId(params)`: `z.object({ id: z.uuid() })`; id que não é UUID vira `undefined` → `404` sem ir ao banco
-    (conferido: `z.uuid()` do Zod 4.6 aceita o `crypto.randomUUID()`/`gen_random_uuid()` e recusa `"abc"`);
-  - `notFound(reply)`: `404` `{ "error": "Registro não encontrado" }`, local do `transactions.ts` (um só arquivo usa).
-- **Uma consulta por operação, com `id` e `user_id` no mesmo `WHERE`**: `UPDATE ... RETURNING` e
-  `DELETE ... RETURNING id`. Zero linhas = `404`, seja id inexistente, seja de outro usuário. Sem "ler e depois
-  gravar", então não há janela entre conferir o dono e alterar.
-- **Schema do `PATCH` = `createTransactionSchema.partial()` + `refine` "ao menos um campo"**. Conferido no Zod 4.6:
-  `{}` e `{ foo: 1 }` caem no refine; `null` no campo → `required`; `trim` e mensagens do `POST` mantidos; `null`/`[]`
-  na raiz → `INVALID_BODY`. Campos ausentes ficam fora do objeto de saída.
-- **`.set()` com os quatro campos mapeados (`amount` → `amountCents`, `date` → `occurredOn`) + `updatedAt: sql\`now()\``**.
-  Conferido no Drizzle 0.45 (`mapUpdateSet`): chaves `undefined` são descartadas, então só os campos enviados entram
-  no `SET`; como o `updatedAt` sempre vai, o `SET` nunca fica vazio. `now()` do banco, e não `new Date()` do Node:
-  o mesmo relógio do `createdAt`.
-- **Testes novos em `test/transactions-update-delete.test.ts`** (T2–T4): o `test/transactions.test.ts` já tem 540 linhas
-  e cobre `POST`/`GET`. Os testes de `updatedAt` no `POST`/`GET` (T1) ficam no `transactions.test.ts`.
+- **Refatoração primeiro e separada (T1)**: mover `usernameSchema`, `emailSchema` e `isUniqueViolation` para fora do
+  `auth.ts` sem mudar nada no comportamento. Os testes de `register.test.ts` e `login.test.ts` são a rede de segurança:
+  têm de continuar verdes **sem nenhuma alteração**. Assim, o diff das rotas novas (T2–T4) fica só com código novo.
+  - `src/lib/user-fields.ts`: `usernameSchema` (`trim` + minúsculas + tamanho + regex) e `emailSchema`, com as
+    mensagens atuais. O `registerSchema` e o `loginSchema` passam a usá-los.
+  - `src/lib/db-errors.ts`: `isUniqueViolation(error)` (`DrizzleQueryError` + `pg.DatabaseError` + código `23505`).
+- **Duas exportações novas em `src/lib/authenticate.ts`** (pequeno desvio da spec, que dizia "nenhuma mudança" nesse arquivo):
+  - `unauthorized(reply)` passa a ser exportada: o `PATCH` e o `DELETE` respondem o `401` padrão quando a conta some
+    no meio do caminho (0 linhas), sem copiar a resposta.
+  - `publicUserColumns`: as colunas que o `requireAuth` já seleciona (`id`, `username`, `email`, `role`, `createdAt`)
+    viram uma constante. O `.returning(publicUserColumns)` do `PATCH` sai então **exatamente** no formato do
+    `GET /users/me`, e um campo novo no futuro entra nos dois de uma vez.
+  Nenhum comportamento do `requireAuth` muda.
+- **`PATCH`: uma consulta só**: `UPDATE users SET <campos enviados> WHERE id = <token> RETURNING ...`. O `UNIQUE` do banco
+  decide o `409` (sem `SELECT` antes para "ver se o email existe", que teria corrida). Schema =
+  `z.object({ username: usernameSchema, email: emailSchema }, INVALID_BODY).partial().refine(ao menos um campo)`,
+  o mesmo padrão do `PATCH` de transactions (Zod 4.6: chave ausente fica fora da saída; o Drizzle 0.45 descarta
+  `undefined` no `.set()`). O refine garante que o `SET` nunca fica vazio (o Drizzle lança erro com `.set({})`).
+- **`DELETE`: ler o hash, verificar, apagar**: `SELECT password_hash WHERE id = <token>` → `verifyPassword()` →
+  `DELETE WHERE id = <token> RETURNING id`. Aqui "ler e depois gravar" é aceitável: o id vem do token (não há dono a
+  conferir), e a única corrida possível (dois `DELETE` juntos) termina em `0` linhas → `401`. O `currentUser()` continua
+  sem o `passwordHash`, de propósito.
+- **`403` `Senha incorreta`** no `DELETE` com senha errada (spec, premissa 5). Validação da senha igual à do login:
+  `z.string(required).min(1, required.error)`, sem tamanho mínimo.
+- **Rate limit por rota** (`config.rateLimit`), como login e cadastro: `DELETE` 5/min, `PATCH` 10/min.
+  O `@fastify/rate-limit` 11 põe o hook dele no fim do `onRequest` da rota (`routeOptions.onRequest.push`), então ele
+  roda **depois** do `requireAuth` do plugin: requisição sem token recebe `401` e não conta no limite. O teste do
+  `429` usa um token válido.
+- **Log**: o `sendError` loga só a `query` dos erros do Drizzle, sem os parâmetros (`src/lib/errors.ts:44`), então o
+  email do `PATCH` não vai para o log num `500`. A senha do `DELETE` nunca entra numa consulta.
+- **Testes novos em `test/users-update-delete.test.ts`** (T2–T4) e os limites em `test/rate-limit.test.ts` (T5).
+  O `users-me.test.ts` continua só com o `GET`.
 
 ## Risks and Mitigations
 
 | Risco | Impacto | Mitigação |
 |---|---|---|
-| Linhas antigas com `updated_at` = horário da migration | Médio | `UPDATE ... = created_at` na `0004` antes de aplicar; conferir no `psql` depois do `db:migrate` |
-| Teste de "`updatedAt` mudou" instável: `POST` e `PATCH` no mesmo milissegundo | Médio | No teste, recuar `created_at`/`updated_at` do registro direto no banco (ex.: `2026-01-01`) antes do `PATCH` e comparar com esse valor |
-| Esquecer o `user_id` no `WHERE` de `UPDATE`/`DELETE` | Alto | Teste de isolamento em cada rota: o B recebe `404` e o registro do A continua intacto (conferido pelo `GET` do A) |
-| `:id` não UUID chegar ao Postgres (`500`) | Médio | `parseId` antes da consulta; teste com `/transactions/abc` |
-| Rota nova mudar o `404` de `DELETE /transactions` (sem id) em `test/errors.test.ts:134` | Baixo | `/transactions/:id` não casa com `/transactions`; o teste existente tem de continuar verde sem mudança |
-| Testes que comparam o formato exato do registro (`transactions.test.ts:46` e `:315`) quebrarem | Baixo (esperado) | Ganham só `updatedAt: expect.any(String)`; nenhum outro teste existente muda |
+| A refatoração (T1) mudar uma mensagem ou a ordem da normalização do cadastro | Médio | T1 isolada; `register.test.ts` e `login.test.ts` verdes sem alteração; diff só de movimentação |
+| `PATCH` aceitar `role` do corpo | Alto | O schema só tem `username` e `email`, e o `.set()` recebe só a saída do Zod; teste com `role: "admin"` confere no banco que continua `user` |
+| `DELETE` apagar sem conferir a senha | Alto | Teste de senha errada: `403` e a conta continua (o login ainda funciona) |
+| `CASCADE` apagar registros de outro usuário | Alto | Teste com dois usuários: depois do `DELETE` do A, os registros do B continuam no `GET` do B |
+| Teste da corrida (conta apagada entre o `requireAuth` e a consulta) difícil de montar | Baixo | App próprio no teste com um hook `preHandler` que apaga o usuário antes do handler; se o Fastify não permitir, fica coberto pela leitura do código e isso é relatado |
+| `DELETE` com corpo JSON diferente do `DELETE /transactions/:id` (sem corpo) confundir o front | Baixo | Contrato na spec explica os dois; testes de `INVALID_BODY` e `415` |
+| Rate limit por IP bloquear usuários atrás do mesmo NAT | Baixo | Limites de conta pessoal (5 e 10 por minuto); `trustProxy` já registrado para quando houver proxy |
 
 ## Open Questions
 
-Nenhuma.
+Nenhuma. Catálogo de skills conferido: nenhuma tarefa pede skill nova (sem migration, sem frontend, sem métricas).
