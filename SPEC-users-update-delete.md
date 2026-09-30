@@ -1,6 +1,6 @@
 # Spec: Editar e excluir a própria conta
 
-Status: **rascunho** (aguardando aprovação do dono). Continuação de [SPEC-auth-hardening.md](SPEC-auth-hardening.md).
+Status: **concluída** (aprovada pelo dono em 2026-09-30). Continuação de [SPEC-auth-hardening.md](SPEC-auth-hardening.md).
 
 ## Objetivo
 
@@ -75,7 +75,8 @@ fica para uma spec própria, quando o dono definir as regras por `role`. Sem mig
 - `password` ausente, vazia ou com tipo errado → `400` `Campo obrigatório ausente ou inválido` (a senha não tem tamanho
   mínimo aqui, como no login).
 - Corpo que não é objeto JSON (ausente, vazio, malformado, `null`, `[]`) → `400` `Corpo da requisição inválido: envie um objeto JSON`.
-  Sem `Content-Type: application/json` → `415` (o `sendError` já mapeia).
+  `Content-Type: text/plain` → também `INVALID_BODY` (o Fastify tem parser de texto e entrega uma string); tipo sem
+  parser (ex.: `application/xml`) → `415` (o `sendError` já mapeia).
 - Campos a mais no corpo são ignorados.
 - Conta excluída entre o `requireAuth` e o `DELETE` (dois `DELETE` simultâneos): `0` linhas → `401` padrão.
 
@@ -128,8 +129,9 @@ test/rate-limit.test.ts    # limites do PATCH e do DELETE /users/me
 AGENTS.md                  # etapa atual, estrutura, roteiro e decisões
 ```
 
-Os nomes finais dos dois arquivos novos ficam para o plano. Nenhuma mudança em `app.ts`, `errors.ts`, `authenticate.ts`
-ou no schema do banco. Os testes de `register.test.ts` não mudam: as regras são as mesmas, só mudam de arquivo.
+Os nomes finais dos dois arquivos novos ficam para o plano. Nenhuma mudança em `app.ts`, `errors.ts` ou no schema do
+banco (o `authenticate.ts` só passou a exportar `unauthorized` e `publicUserColumns`). Os testes de `register.test.ts`
+não mudam: as regras são as mesmas, só mudam de arquivo.
 
 ## Code Style
 
@@ -205,12 +207,14 @@ No `DELETE`, o hash vem do banco (o `currentUser()` não carrega o `passwordHash
 
 ## Success Criteria
 
-- [ ] Todos os critérios de aceite acima com teste automatizado passando.
-- [ ] `npm run typecheck` e `npm test` verdes, sem mudar o comportamento dos testes existentes.
-- [ ] `curl` no servidor real: cadastro → login → `PATCH` só com `username` (200) → `GET /users/me` com o novo →
+- [x] Todos os critérios de aceite acima com teste automatizado passando.
+- [x] `npm run typecheck` e `npm test` verdes, sem mudar o comportamento dos testes existentes.
+- [x] `curl` no servidor real: cadastro → login → `PATCH` só com `username` (200) → `GET /users/me` com o novo →
       `PATCH` com o email de um segundo usuário (409) → `POST /transactions` → `DELETE` com senha errada (403) →
       `DELETE` com a senha certa (204) → `GET /users/me` com o mesmo token (401) → login (401).
-- [ ] `AGENTS.md` atualizado (etapa atual, estrutura, roteiro e decisões).
+- [x] `AGENTS.md` atualizado (etapa atual, estrutura, roteiro e decisões).
+
+Nota: o ramo "`DELETE` com 0 linhas" (conta apagada entre o `SELECT` do hash e o `DELETE`) ficou coberto só por leitura de código, aceito pelo dono; o teste da corrida cobre o ramo do `SELECT` vazio.
 
 ## Resumo do contrato para o frontend
 

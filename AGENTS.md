@@ -30,7 +30,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 ## Contexto do projeto
 
-- **Etapa atual: edição e exclusão de registros financeiros** (`PATCH` e `DELETE /transactions/:id` e o campo `updatedAt`; spec em `SPEC-transactions-update-delete.md`, continuação de `SPEC-transactions.md`). As etapas de autenticação e de registros financeiros (`POST`/`GET`) estão concluídas (roteiros abaixo, como histórico).
+- **Etapa atual: edição e exclusão da própria conta** (`PATCH` e `DELETE /users/me`; spec em `SPEC-users-update-delete.md`, continuação de `SPEC-auth-hardening.md`). As etapas de autenticação e de registros financeiros (`POST`/`GET`, `PATCH`/`DELETE /transactions/:id` e `updatedAt`) estão concluídas (roteiros abaixo, como histórico).
 - O projeto começou em Rust e foi migrado para TypeScript. A versão em Rust está na tag `versao-rust`.
 
 ### Stack
@@ -60,7 +60,10 @@ src/
 │   ├── client.ts    # pool de conexões + Drizzle
 │   └── schema.ts    # definição das tabelas (fonte das migrations)
 ├── lib/
-│   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user, ou 401 padrão) e currentUser(request)
+│   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user, ou 401 padrão), currentUser(request),
+│   │                    # unauthorized(reply) e publicUserColumns (colunas do usuário que podem sair numa resposta)
+│   ├── user-fields.ts  # usernameSchema e emailSchema (cadastro, login só o email, e PATCH /users/me) e DUPLICATE_USER
+│   ├── db-errors.ts  # isUniqueViolation(): código 23505 do Postgres dentro do erro do Drizzle
 │   ├── password.ts  # hash e verificação de senha
 │   ├── token.ts     # geração e verificação do JWT
 │   ├── validation.ts  # badRequest() (400 com a primeira mensagem do Zod), `required` e `INVALID_BODY`
@@ -68,18 +71,19 @@ src/
 └── routes/
     ├── health.ts    # GET /health
     ├── auth.ts      # POST /auth/register, /auth/login e /auth/logout
-    ├── users.ts     # GET /users/me
+    ├── users.ts     # GET, PATCH (username/email) e DELETE (com senha) /users/me
     └── transactions.ts  # POST, GET (lista + totais, filtro from/to), PATCH /:id (parcial) e DELETE /:id
 test/
 ├── global-setup.ts  # cria o banco de testes (_test) e aplica as migrations
 ├── helpers.ts       # createTestApp (rate limit desligado por padrão) e atalhos de cadastro/login
 ├── register.test.ts, login.test.ts, users-me.test.ts, logout.test.ts
+├── users-update-delete.test.ts  # PATCH e DELETE /users/me (normalização, 409, validação, senha, CASCADE, corrida, 401)
 ├── transactions.test.ts  # POST e GET /transactions (validação, totais, ordem, filtro, isolamento, 401)
 ├── transactions-update-delete.test.ts  # PATCH e DELETE /transactions/:id (parcial, updatedAt, validação, ordem dos erros, isolamento, 404, 401)
 ├── require-auth.test.ts  # requireAuth roda antes do parse do corpo; currentUser sem hook; falha do banco no hook
 ├── errors.test.ts  # sendError: 4xx em português (corpo inválido, 404, 413, 415, URL malformada, 429, 401 antes do 400),
 │                   # warn só com o code em FST_* sem mapeamento, 5xx genérico + log (inclusive via frameworkErrors)
-└── rate-limit.test.ts  # único que liga o rate limit, com os limites reais
+└── rate-limit.test.ts  # único que liga o rate limit, com os limites reais (login, cadastro, PATCH e DELETE /users/me)
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 .claude/
 ├── agents/          # implementador e revisor (Sonnet 5.5, esforço alto)
@@ -140,7 +144,12 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
   - `415` (tipo de conteúdo), `413` (corpo > 1 MiB), `404` (`setNotFoundHandler`) e `400` de URL malformada (opção `frameworkErrors`) têm mensagem própria, sem repetir URL nem corpo;
   - outro código `FST_*` → `Requisição inválida`, com o mesmo status, e loga só o código (`warn`, nunca URL, corpo ou a mensagem original); 4xx mapeados e 4xx sem código `FST_*` (ex.: o `429` do rate limit, que mantém a própria mensagem) não são logados;
   - todo 5xx, inclusive os do próprio Fastify (ex.: `FST_ERR_ASYNC_CONSTRAINT`), sai `Erro interno do servidor` com o erro completo no log.
-- **Rate limit em memória, por IP** (login 5/min, cadastro 3/min): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
+- **`/users/me` sem ações de admin**: cada usuário age só sobre a própria conta. `/users/:id` (admin) fica para uma spec própria, quando houver regras por `role`.
+- **`PATCH /users/me` só `username` e `email`**, com as mesmas regras, normalização e mensagens do cadastro (`user-fields.ts`) e o `409` `Email ou username já cadastrado` (`DUPLICATE_USER`). `role`, `password` e outros campos no corpo são ignorados; corpo sem `username` nem `email` dá `400` `Envie ao menos um campo para alterar`. `UPDATE ... RETURNING` numa consulta só; 0 linhas (conta apagada no meio) → `401` padrão.
+- **Trocar o email não pede senha** (decisão do dono). **Risco**: quando existir recuperação de senha por email, trocar o email com um token vazado vira jeito de tomar a conta; nessa etapa, voltar a exigir a senha (ou confirmar pelo email antigo).
+- **`DELETE /users/me` definitivo, com `{ "password" }` no corpo**: apaga o usuário e, pelo `CASCADE`, os registros financeiros dele. Senha errada → `403` `Senha incorreta` (não `401`, para o front não tratar como sessão expirada e deslogar); o hash é lido só nessa rota (o `currentUser()` não carrega `passwordHash`). Corpo com `text/plain` dá `INVALID_BODY` (o Fastify tem parser de texto); só tipo sem parser (ex.: `application/xml`) dá `415`.
+- **Rate limit em memória, por IP** (login 5/min, cadastro 3/min, `DELETE /users/me` 5/min, `PATCH /users/me` 10/min): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
+  Nas rotas de `/users/me` o hook do limite é da rota e roda depois do `requireAuth` do plugin: sem token vem `401` e a requisição não consome o limite.
   Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
   Com mais de um processo, os contadores não são compartilhados: trocar o store por Redis.
   Rotas inexistentes (`404`) não têm rate limit: varredura de rotas só é freada pelo que houver na frente (ex.: um proxy ou CDN).
@@ -174,7 +183,7 @@ Spec em `SPEC-transactions.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo
 6. ✅ **Refatoração da autenticação**: `authenticate()` virou o hook `onRequest` `requireAuth(db)` + `currentUser(request)`; `test/require-auth.test.ts` cobre a ordem (401 antes do parse do corpo).
 7. ✅ **Documentação**: este arquivo, a spec (critérios e resumo do contrato para o front) e o `todo.md`.
 
-## Roteiro da etapa de edição e exclusão
+## Roteiro da etapa de edição e exclusão de registros financeiros (concluída)
 
 Spec em `SPEC-transactions-update-delete.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
 
@@ -183,6 +192,17 @@ Spec em `SPEC-transactions-update-delete.md`, plano em `tasks/plan.md`, tarefas 
 3. ✅ **`PATCH /transactions/:id`** (caminho feliz): altera só os campos enviados (`SET` com o que veio + `updated_at = now()`), responde `200` com o registro inteiro; isolamento por usuário, `404` e `401`.
 4. ✅ **Validação do `PATCH`**: mesmas regras e mensagens do `POST` por campo, `Envie ao menos um campo para alterar` para corpo sem campos, campos extras ignorados, ordem dos erros (`401` → corpo do Fastify → `:id` → campos → `404`).
 5. ✅ **Documentação**: este arquivo, o contrato para o front em `SPEC-transactions.md` e os critérios da spec marcados.
+
+## Roteiro da etapa de edição e exclusão da conta
+
+Spec em `SPEC-users-update-delete.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
+
+1. ✅ **Regras compartilhadas**: `usernameSchema`/`emailSchema` (`user-fields.ts`) e `isUniqueViolation` (`db-errors.ts`) saíram do `auth.ts`, sem mudar o comportamento do cadastro e do login.
+2. ✅ **`PATCH /users/me`** (caminho feliz): `username` e/ou `email` normalizados, `200` no formato do `GET /users/me`, `409` e `401`; `unauthorized()` e `publicUserColumns` exportados do `authenticate.ts`.
+3. ✅ **Validação do `PATCH`**: mensagens do cadastro, `Envie ao menos um campo para alterar`, `null`/tipo errado, `role` e `password` ignorados.
+4. ✅ **`DELETE /users/me`**: senha no corpo, `403` para senha errada, `204` e `CASCADE` nos registros financeiros.
+5. ✅ **Rate limit**: `DELETE` 5/min e `PATCH` 10/min por IP, depois do `requireAuth`.
+6. ✅ **Documentação**: este arquivo e a spec (status e critérios).
 
 ### Regras de segurança (verificar em toda mudança)
 

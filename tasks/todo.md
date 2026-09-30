@@ -48,14 +48,15 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - [x] typecheck + testes verdes; `register.test.ts` e `login.test.ts` sem alteração
 - [x] Revisão do dono antes do `DELETE`
 
-## Task 4: `DELETE /users/me`
+## Task 4: `DELETE /users/me` ✅
 - Aceite:
   - `{ "password": <senha certa> }` → `204` com corpo vazio; depois disso o mesmo token dá `401` no `GET /users/me`, o login
     dá `401`, e o email e o username podem ser cadastrados de novo.
   - Os registros financeiros do usuário somem do banco (`CASCADE`); os de **outro usuário** continuam no `GET` dele.
   - Senha errada → `403` `Senha incorreta`, e a conta continua (o login ainda funciona).
   - Sem `password`, `password: ""` e `password: 123` → `400` `Campo obrigatório ausente ou inválido`.
-  - Sem corpo, `null` e `[]` → `INVALID_BODY`; corpo com `Content-Type: text/plain` → `415` (mensagem do `sendError`).
+  - Sem corpo, `null`, `[]` e `Content-Type: text/plain` → `INVALID_BODY` (o Fastify tem parser de texto);
+    `Content-Type: application/xml` → `415` (mensagem do `sendError`).
   - Sem token e token revogado por logout → `401` padrão.
   - Conta apagada entre o `SELECT` do hash e o `DELETE` → `401` padrão.
   - O `passwordHash` não aparece em nenhuma resposta nem no `currentUser()`.
@@ -64,7 +65,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/routes/users.ts, test/users-update-delete.test.ts
 - Tamanho: S · Depende de: T3
 
-## Task 5: Rate limit no `PATCH` e no `DELETE /users/me`
+## Task 5: Rate limit no `PATCH` e no `DELETE /users/me` ✅
 - Aceite:
   - `DELETE` 5/min e `PATCH` 10/min por IP (`config.rateLimit`), com constantes nomeadas como as do `auth.ts`.
   - Com token válido: o 6º `DELETE` (senha errada) e o 11º `PATCH` no mesmo minuto → `429`
@@ -76,11 +77,11 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Tamanho: S · Depende de: T4
 
 ## Checkpoint B (T4–T5)
-- [ ] typecheck + testes verdes
-- [ ] Fluxo do `curl` da spec (Success Criteria) completo no servidor real
-- [ ] Revisão do dono
+- [x] typecheck + testes verdes
+- [x] Fluxo do `curl` da spec (Success Criteria) completo no servidor real
+- [x] Revisão do dono
 
-## Task 6: Documentação
+## Task 6: Documentação ✅
 - Aceite:
   - `AGENTS.md`: etapa atual (edição e exclusão da conta), estrutura (`user-fields.ts`, `db-errors.ts`, `users.ts`, testes novos),
     roteiro da etapa e decisões (`/users/me` sem admin, `PATCH` só `username`/`email`, email sem senha e o risco futuro
@@ -91,6 +92,6 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Tamanho: S · Depende de: T5
 
 ## Checkpoint final
-- [ ] Todos os critérios de aceite da spec com teste passando
-- [ ] `npm run typecheck` e `npm test` verdes
-- [ ] Documentação atualizada; pronto para o commit (com o pedido do dono)
+- [x] Todos os critérios de aceite da spec com teste passando
+- [x] `npm run typecheck` e `npm test` verdes
+- [x] Documentação atualizada; pronto para o commit (com o pedido do dono)
