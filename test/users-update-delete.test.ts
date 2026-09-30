@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
-import { users } from "../src/db/schema.ts";
+import { transactions, users } from "../src/db/schema.ts";
 import {
   bearer,
   closeTestApp,
@@ -311,5 +311,200 @@ describe("PATCH /users/me: validação", () => {
     const [row] = await db.select().from(users).where(eq(users.email, userA.email));
     expect(row?.role).toBe("user");
     expect(await loginUser(app, userA)).toEqual(expect.any(String));
+  });
+});
+
+describe("DELETE /users/me", () => {
+  const WRONG_PASSWORD = { error: "Senha incorreta" };
+  const UNSUPPORTED_MEDIA = { error: "Tipo de conteúdo não suportado (use application/json)" };
+
+  function deleteMe(token: string | undefined, payload?: unknown, headers: Record<string, string> = {}) {
+    return app.inject({
+      method: "DELETE",
+      url: "/users/me",
+      headers: token === undefined ? headers : { authorization: bearer(token), ...headers },
+      payload: payload as object | undefined,
+    });
+  }
+
+  function createTransaction(token: string) {
+    return app.inject({
+      method: "POST",
+      url: "/transactions",
+      headers: { authorization: bearer(token) },
+      payload: { type: "expense", amount: 1990, description: "Almoço", date: "2026-09-29" },
+    });
+  }
+
+  test("com a senha certa: 204 sem corpo; o token, o login e a conta somem", async () => {
+    // Arrange
+    const token = await createUserWithToken(userA);
+
+    // Act
+    const response = await deleteMe(token, { password: userA.password });
+
+    // Assert
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
+    expectUnauthorized(await getMe(token));
+    const login = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: userA.email, password: userA.password },
+    });
+    expect(login.statusCode).toBe(401);
+  });
+
+  test("email e username podem ser cadastrados de novo", async () => {
+    // Arrange
+    const token = await createUserWithToken(userA);
+    await deleteMe(token, { password: userA.password });
+
+    // Act
+    const response = await app.inject({ method: "POST", url: "/auth/register", payload: userA });
+
+    // Assert
+    expect(response.statusCode).toBe(201);
+  });
+
+  test("apaga os registros financeiros do usuário e mantém os de outro", async () => {
+    // Arrange
+    const tokenA = await createUserWithToken(userA);
+    const tokenB = await createUserWithToken(userB);
+    await createTransaction(tokenA);
+    await createTransaction(tokenB);
+
+    // Act
+    const response = await deleteMe(tokenA, { password: userA.password });
+
+    // Assert
+    expect(response.statusCode).toBe(204);
+    expect(await db.select().from(transactions)).toHaveLength(1);
+    const list = await app.inject({ method: "GET", url: "/transactions", headers: { authorization: bearer(tokenB) } });
+    expect(list.json().transactions).toHaveLength(1);
+  });
+
+  test("senha errada: 403 Senha incorreta, e a conta continua", async () => {
+    // Arrange
+    const token = await createUserWithToken(userA);
+
+    // Act
+    const response = await deleteMe(token, { password: "errada123" });
+
+    // Assert
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual(WRONG_PASSWORD);
+    expect((await getMe(token)).statusCode).toBe(200);
+    expect(await loginUser(app, userA)).toEqual(expect.any(String));
+  });
+
+  test.each([
+    ["sem password", {}],
+    ["password vazio", { password: "" }],
+    ["password número", { password: 123 }],
+  ])("%s: 400 de campo obrigatório", async (_caso, payload) => {
+    const token = await createUserWithToken(userA);
+
+    const response = await deleteMe(token, payload);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(REQUIRED);
+    expect((await getMe(token)).statusCode).toBe(200);
+  });
+
+  test.each([
+    ["sem corpo", undefined],
+    ["null", "null"],
+    ["array", "[]"],
+  ])("corpo %s: 400 de corpo inválido", async (_caso, raw) => {
+    const token = await createUserWithToken(userA);
+
+    const response = await deleteMe(token, raw, { "content-type": "application/json" });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(INVALID_BODY);
+  });
+
+  test("sem corpo e sem Content-Type (o DELETE comum do front): 400 de corpo inválido, e a conta continua", async () => {
+    const token = await createUserWithToken(userA);
+
+    const response = await deleteMe(token);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(INVALID_BODY);
+    expect((await getMe(token)).statusCode).toBe(200);
+  });
+
+  test("Content-Type text/plain: o Fastify lê como texto, que não é objeto JSON: 400", async () => {
+    const token = await createUserWithToken(userA);
+
+    const response = await deleteMe(token, "senha123", { "content-type": "text/plain" });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(INVALID_BODY);
+  });
+
+  test("Content-Type sem parser (application/xml): 415", async () => {
+    const token = await createUserWithToken(userA);
+
+    const response = await deleteMe(token, "<a/>", { "content-type": "application/xml" });
+
+    expect(response.statusCode).toBe(415);
+    expect(response.json()).toEqual(UNSUPPORTED_MEDIA);
+  });
+
+  test("responde 401 sem token", async () => {
+    expectUnauthorized(await deleteMe(undefined, { password: userA.password }));
+  });
+
+  test("responde 401 com token revogado por logout", async () => {
+    // Arrange
+    const token = await createUserWithToken(userA);
+    await app.inject({ method: "POST", url: "/auth/logout", headers: { authorization: bearer(token) } });
+
+    // Act + Assert
+    expectUnauthorized(await deleteMe(token, { password: userA.password }));
+  });
+
+  test("conta apagada depois do requireAuth (hook preHandler): 401 padrão", async () => {
+    // Arrange: o hook apaga a conta antes do handler, então aqui é o SELECT do hash que volta vazio.
+    const { app: raceApp, db: raceDb } = createTestApp();
+    raceApp.addHook("preHandler", async (request) => {
+      if (request.user) {
+        await raceDb.delete(users).where(eq(users.id, request.user.id));
+      }
+    });
+    try {
+      await registerUser(raceApp, userA);
+      const token = await loginUser(raceApp, userA);
+
+      // Act
+      const response = await raceApp.inject({
+        method: "DELETE",
+        url: "/users/me",
+        headers: { authorization: bearer(token) },
+        payload: { password: userA.password },
+      });
+
+      // Assert
+      expectUnauthorized(response);
+    } finally {
+      await closeTestApp(raceApp, raceDb);
+    }
+  });
+
+  test("o hash da senha não aparece em nenhuma resposta (inclusive o GET /users/me, que devolve o currentUser())", async () => {
+    // Arrange
+    const token = await createUserWithToken(userA);
+
+    // Act
+    const me = await getMe(token);
+    const wrong = await deleteMe(token, { password: "errada123" });
+    const ok = await deleteMe(token, { password: userA.password });
+
+    // Assert
+    for (const response of [me, wrong, ok]) {
+      expect(response.body).not.toMatch(/passwordHash|password_hash|argon2/);
+    }
   });
 });

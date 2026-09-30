@@ -107,6 +107,120 @@ describe("rate limit em POST /auth/register (3 por minuto por IP)", () => {
   });
 });
 
+// Cadastra e faz login (esses dois usam os limites das próprias rotas, sem relação com os de /users/me).
+async function tokenForDefaultUser() {
+  await postRegister(defaultUser);
+  const login = await postLogin({ email: defaultUser.email, password: defaultUser.password });
+  return login.json<{ token: string }>().token;
+}
+
+function deleteMe(token: string | undefined, password = "senha-errada") {
+  return current.app.inject({
+    method: "DELETE",
+    url: "/users/me",
+    headers: token === undefined ? {} : { authorization: bearer(token) },
+    payload: { password },
+  });
+}
+
+function patchMe(token: string | undefined, username = "novo_nome") {
+  return current.app.inject({
+    method: "PATCH",
+    url: "/users/me",
+    headers: token === undefined ? {} : { authorization: bearer(token) },
+    payload: { username },
+  });
+}
+
+describe("rate limit em DELETE /users/me (5 por minuto por IP)", () => {
+  test("as 5 primeiras tentativas com senha errada dão 403 e a 6ª responde 429", async () => {
+    const token = await tokenForDefaultUser();
+
+    for (let i = 1; i <= 5; i++) {
+      expect((await deleteMe(token)).statusCode).toBe(403);
+    }
+    const blocked = await deleteMe(token);
+
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toEqual(RATE_LIMIT_ERROR);
+    const retryAfter = Number(blocked.headers["retry-after"]);
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(60);
+  });
+
+  test("com o limite estourado, nem a senha certa apaga a conta", async () => {
+    const token = await tokenForDefaultUser();
+    for (let i = 1; i <= 5; i++) {
+      await deleteMe(token);
+    }
+
+    const blocked = await deleteMe(token, defaultUser.password);
+
+    expect(blocked.statusCode).toBe(429);
+    // O 429 sai antes do handler: a conta continua existindo (o GET /users/me não tem limite).
+    const me = await current.app.inject({
+      method: "GET",
+      url: "/users/me",
+      headers: { authorization: bearer(token) },
+    });
+    expect(me.statusCode).toBe(200);
+  });
+
+  test("sem token responde 401 e não consome o limite (o requireAuth roda antes)", async () => {
+    const token = await tokenForDefaultUser();
+
+    for (let i = 1; i <= 6; i++) {
+      const response = await deleteMe(undefined);
+      expect(response.statusCode).toBe(401);
+    }
+
+    // Se as 6 requisições sem token tivessem contado, esta (a 7ª) já seria 429.
+    for (let i = 1; i <= 5; i++) {
+      expect((await deleteMe(token)).statusCode).toBe(403);
+    }
+    expect((await deleteMe(token)).statusCode).toBe(429);
+  });
+});
+
+describe("rate limit em PATCH /users/me (10 por minuto por IP)", () => {
+  test("os 10 primeiros passam (200) e o 11º responde 429", async () => {
+    const token = await tokenForDefaultUser();
+
+    for (let i = 1; i <= 10; i++) {
+      expect((await patchMe(token, `nome_${i}`)).statusCode).toBe(200);
+    }
+    const blocked = await patchMe(token, "nome_11");
+
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toEqual(RATE_LIMIT_ERROR);
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+
+  test("sem token responde 401 e não consome o limite", async () => {
+    const token = await tokenForDefaultUser();
+
+    for (let i = 1; i <= 11; i++) {
+      expect((await patchMe(undefined)).statusCode).toBe(401);
+    }
+
+    for (let i = 1; i <= 10; i++) {
+      expect((await patchMe(token, `nome_${i}`)).statusCode).toBe(200);
+    }
+    expect((await patchMe(token)).statusCode).toBe(429);
+  });
+
+  test("PATCH e DELETE têm contadores separados", async () => {
+    const token = await tokenForDefaultUser();
+    // Esgota o PATCH (10). Com um contador só, o DELETE seguinte já daria 429.
+    for (let i = 1; i <= 10; i++) {
+      expect((await patchMe(token)).statusCode).toBe(200);
+    }
+    expect((await patchMe(token)).statusCode).toBe(429);
+
+    expect((await deleteMe(token)).statusCode).toBe(403);
+  });
+});
+
 describe("rotas sem limite", () => {
   test("GET /users/me não é limitado: 10 chamadas seguidas com token válido dão 200", async () => {
     // Arrange
