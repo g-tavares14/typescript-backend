@@ -1,29 +1,19 @@
-import { DrizzleQueryError, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { FastifyPluginAsync } from "fastify";
-import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
 import { currentUser, requireAuth } from "../lib/authenticate.ts";
+import { isUniqueViolation } from "../lib/db-errors.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
+import { DUPLICATE_USER, emailSchema, usernameSchema } from "../lib/user-fields.ts";
 import { badRequest, INVALID_BODY, required } from "../lib/validation.ts";
 
-// Validação e normalização do corpo da requisição.
-// O trim/toLowerCase roda antes da validação do email e do username; a senha não é alterada.
-const emailSchema = z.string(required).trim().toLowerCase().pipe(z.email("Email inválido"));
-
+// Validação do corpo da requisição. As regras de username e email são compartilhadas (src/lib/user-fields.ts);
+// a senha não é alterada.
 const registerSchema = z.object({
-  username: z
-    .string(required)
-    .trim()
-    .toLowerCase()
-    .min(3, "O username deve ter entre 3 e 50 caracteres")
-    .max(50, "O username deve ter entre 3 e 50 caracteres")
-    // Só a-z, 0-9 e _: barra acento, espaço, letras de outros alfabetos e caracteres invisíveis.
-    // Junto com o toLowerCase, "Joao" e "joao" viram o mesmo username (o UNIQUE do banco pega o duplicado).
-    // Vem depois dos checks de tamanho, então um username curto continua recebendo a mensagem de tamanho.
-    .regex(/^[a-z0-9_]+$/, "O username só pode ter letras sem acento, números e _"),
+  username: usernameSchema,
   email: emailSchema,
   password: z.string(required).min(8, "A senha deve ter no mínimo 8 caracteres"),
 }, INVALID_BODY);
@@ -64,7 +54,7 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
       return reply.code(201).send(user);
     } catch (error) {
       if (isUniqueViolation(error)) {
-        return reply.code(409).send({ error: "Email ou username já cadastrado" });
+        return reply.code(409).send({ error: DUPLICATE_USER });
       }
       throw error; // vira 500 genérico no error handler do app.ts
     }
@@ -112,13 +102,3 @@ export const authRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =>
     return reply.code(204).send();
   });
 };
-
-// 23505 é o código do Postgres para violação de UNIQUE.
-// O Drizzle embrulha o erro do driver em DrizzleQueryError, e o erro original fica em .cause.
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof DrizzleQueryError &&
-    error.cause instanceof pg.DatabaseError &&
-    error.cause.code === "23505"
-  );
-}
