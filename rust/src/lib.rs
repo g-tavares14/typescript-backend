@@ -7,6 +7,7 @@ pub mod dates;
 pub mod error;
 pub mod json;
 pub mod password;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 pub mod token;

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { isParity } from "./parity.ts";
 import { bearer, closeTestApp, createTestApp, defaultUser, resetDatabase } from "./helpers.ts";
 
 const RATE_LIMIT_ERROR = { error: "Muitas tentativas. Tente novamente mais tarde." };
@@ -6,6 +7,8 @@ const RATE_LIMIT_ERROR = { error: "Muitas tentativas. Tente novamente mais tarde
 // Cada teste usa um app NOVO com o rate limit ligado e os limites reais (5 logins e 3 cadastros por minuto):
 // os contadores ficam na memória do app, então um app por teste evita que um teste consuma o limite do outro.
 // Cada app abre o próprio pool de conexões, por isso o afterEach fecha todos.
+// Só-TS: os contadores vivem no processo do servidor e o IP não pode ser trocado por HTTP. No modo paridade, o
+// servidor Rust sobe com o limite desligado; o equivalente fica em rust/tests/rate_limit.rs.
 let current: ReturnType<typeof createTestApp>;
 
 beforeEach(async () => {
@@ -31,7 +34,7 @@ function newUser(n: number) {
 
 const wrongLogin = { email: defaultUser.email, password: "senha-errada" };
 
-describe("rate limit em POST /auth/login (5 por minuto por IP)", () => {
+describe.skipIf(isParity)("rate limit em POST /auth/login (5 por minuto por IP)", () => {
   test("as 5 primeiras tentativas passam (401 por senha errada) e a 6ª responde 429", async () => {
     // Act + Assert: tentativas com senha errada também contam.
     for (let i = 1; i <= 5; i++) {
@@ -80,7 +83,7 @@ describe("rate limit em POST /auth/login (5 por minuto por IP)", () => {
   });
 });
 
-describe("rate limit em POST /auth/register (3 por minuto por IP)", () => {
+describe.skipIf(isParity)("rate limit em POST /auth/register (3 por minuto por IP)", () => {
   test("os 3 primeiros cadastros passam e o 4º responde 429", async () => {
     for (let i = 1; i <= 3; i++) {
       expect((await postRegister(newUser(i))).statusCode).toBe(201);
@@ -132,7 +135,7 @@ function patchMe(token: string | undefined, username = "novo_nome") {
   });
 }
 
-describe("rate limit em DELETE /users/me (5 por minuto por IP)", () => {
+describe.skipIf(isParity)("rate limit em DELETE /users/me (5 por minuto por IP)", () => {
   test("as 5 primeiras tentativas com senha errada dão 403 e a 6ª responde 429", async () => {
     const token = await tokenForDefaultUser();
 
@@ -182,7 +185,7 @@ describe("rate limit em DELETE /users/me (5 por minuto por IP)", () => {
   });
 });
 
-describe("rate limit em PATCH /users/me (10 por minuto por IP)", () => {
+describe.skipIf(isParity)("rate limit em PATCH /users/me (10 por minuto por IP)", () => {
   test("os 10 primeiros passam (200) e o 11º responde 429", async () => {
     const token = await tokenForDefaultUser();
 
@@ -221,7 +224,7 @@ describe("rate limit em PATCH /users/me (10 por minuto por IP)", () => {
   });
 });
 
-describe("rotas sem limite", () => {
+describe.skipIf(isParity)("rotas sem limite", () => {
   test("GET /users/me não é limitado: 10 chamadas seguidas com token válido dão 200", async () => {
     // Arrange
     await postRegister(defaultUser);
@@ -240,7 +243,7 @@ describe("rotas sem limite", () => {
   });
 });
 
-describe("rate limit em PUT /users/me/password (5 por minuto por IP)", () => {
+describe.skipIf(isParity)("rate limit em PUT /users/me/password (5 por minuto por IP)", () => {
   function putPassword(token: string | undefined, currentPassword: string) {
     return current.app.inject({
       method: "PUT",

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::extract::FromRef;
 use sqlx::PgPool;
 
-use crate::token::TokenKeys;
+use crate::{rate_limit::RateLimits, token::TokenKeys};
 
 // `Clone` porque o axum entrega uma cópia do estado a cada requisição. O PgPool já é barato de clonar; as chaves
 // ficam num `Arc` (ponteiro com contagem de referências): clonar o Arc só soma 1 na contagem, sem copiar as chaves.
@@ -12,14 +12,23 @@ use crate::token::TokenKeys;
 pub struct AppState {
     pub pool: PgPool,
     pub tokens: Arc<TokenKeys>,
+    pub limits: Arc<RateLimits>,
 }
 
 impl AppState {
+    // Rate limit sempre ligado; só os testes desligam (`without_rate_limit`).
     pub fn new(pool: PgPool, jwt_secret: &str) -> Self {
         AppState {
             pool,
             tokens: Arc::new(TokenKeys::new(jwt_secret)),
+            limits: Arc::new(RateLimits::new(true)),
         }
+    }
+
+    // Para os testes: todos os pedidos vêm do mesmo IP e fazem mais logins por minuto que o limite.
+    pub fn without_rate_limit(mut self) -> Self {
+        self.limits = Arc::new(RateLimits::new(false));
+        self
     }
 }
 

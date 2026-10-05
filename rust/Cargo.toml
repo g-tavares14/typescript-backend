@@ -7,16 +7,16 @@ edition = "2024"
 argon2 = "0.6.0"
 axum = "0.8.9"
 dotenvy = "0.15.7"
+governor = "0.10"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros"] }
 thiserror = "2.0.21"
 time = { version = "0.3.55", features = ["serde", "formatting", "parsing", "macros"] }
-tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["catch-panic", "limit", "trace"] }
-tower_governor = { version = "0.8.0", default-features = false, features = ["axum"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.27.0", features = ["serde", "v4"] }
@@ -27,7 +27,4 @@ http-body-util = "0.1.5"
 # O build de desenvolvimento não otimiza o código, e o argon2 (64 MiB, 3 passadas) fica ~20x mais lento: cada login
 # levava ~2 s. Otimizar só as crates do hash mantém o nosso código fácil de depurar e o hash na velocidade real.
 [profile.dev.package.argon2]
-opt-level = 3
-
-[profile.dev.package.blake2]
 opt-level = 3

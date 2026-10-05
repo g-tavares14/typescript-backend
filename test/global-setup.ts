@@ -32,7 +32,8 @@ export default async function setup() {
   const apiUrl = process.env.API_URL;
   if (apiUrl) {
     const server = spawn("rust/target/debug/meu-backend", {
-      env: { ...process.env, RUST_PORT: new URL(apiUrl).port, RUST_LOG: "warn" },
+      // RUST_RATE_LIMIT=off: a suíte faz muitos logins do mesmo IP (o rate-limit.test.ts é só-TS; ver rust/tests).
+      env: { ...process.env, RUST_PORT: new URL(apiUrl).port, RUST_LOG: "error", RUST_RATE_LIMIT: "off" },
       stdio: ["ignore", "ignore", "inherit"],
     });
     await waitForHealth(apiUrl);

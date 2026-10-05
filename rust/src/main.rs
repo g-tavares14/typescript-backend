@@ -45,9 +45,26 @@ async fn main() {
         });
     println!("Servidor Rust ouvindo na porta {}", config.port);
 
-    if let Err(error) =
-        axum::serve(listener, build_app(AppState::new(pool, &config.jwt_secret))).await
-    {
+    let mut state = AppState::new(pool, &config.jwt_secret);
+    // Só a suíte de paridade (test/global-setup.ts) desliga o rate limit. Nunca em produção: o aviso fica no log.
+    if std::env::var("RUST_RATE_LIMIT").as_deref() == Ok("off") {
+        tracing::warn!("RATE LIMIT DESLIGADO (RUST_RATE_LIMIT=off): use só em testes");
+        state = state.without_rate_limit();
+    }
+
+    // A cada minuto, os contadores esquecem os IPs que já recuperaram a cota (a memória não cresce sem fim).
+    let limits = state.limits.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            limits.retain_recent();
+        }
+    });
+
+    // `into_make_service_with_connect_info`: cada requisição leva o endereço de quem conectou (o rate limit usa o IP).
+    let app = build_app(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    if let Err(error) = axum::serve(listener, app).await {
         eprintln!("Servidor encerrado com erro: {error}");
         process::exit(1);
     }

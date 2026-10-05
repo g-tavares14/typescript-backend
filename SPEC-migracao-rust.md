@@ -163,6 +163,7 @@ Preenchida durante a migração: cada caso de borda em que o Rust responde difer
 | Método errado numa rota que existe (ex.: `POST /health`) | `404` `Rota não encontrada` | `405` `Método não permitido` |
 | Corpo com a chave `__proto__` (ex.: `{"__proto__":{}}`) | `400` `Corpo da requisição inválido: envie um objeto JSON` (proteção do Fastify contra *prototype pollution*) | É uma chave como outra qualquer (Rust não tem protótipos): segue para a validação dos campos, ex.: `400` `Campo obrigatório ausente ou inválido` |
 | `DELETE /transactions/:id` com `Content-Type: application/json` e sem corpo | `400` `Corpo da requisição inválido: envie um objeto JSON` (o Fastify lê o corpo mesmo em rota sem corpo) | `204`: a rota não lê corpo e apaga o registro |
+| Rate limit depois de estourar (ex.: login, 5/min) | Janela fixa: bloqueia até o minuto virar e então libera as 5 de novo; `Retry-After` de até 60 s | GCRA (crate `governor`): até 5 seguidas e depois **uma** nova a cada 12 s; `Retry-After` de até 12 s. Mesmo total por minuto |
 | URL com codificação inválida (ex.: `/%E0%A4%A`) | `400` `URL inválida` | `404` `Rota não encontrada` (o axum compara o caminho sem decodificar) |
 
 O front já manda `application/json` em toda requisição com corpo e só usa os métodos documentados, então nenhum dos

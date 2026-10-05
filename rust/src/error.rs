@@ -5,7 +5,10 @@ use std::error::Error;
 
 use axum::{
     Json,
-    http::{StatusCode, header::WWW_AUTHENTICATE},
+    http::{
+        StatusCode,
+        header::{RETRY_AFTER, WWW_AUTHENTICATE},
+    },
     response::{IntoResponse, Response},
 };
 use serde_json::json;
@@ -39,6 +42,9 @@ pub enum AppError {
     // 404 de um recurso (ex.: "Registro não encontrado"), diferente do 404 de rota inexistente.
     #[error("{0}")]
     NotFoundMessage(&'static str),
+    // 429 do rate limit, com o tempo de espera para o header Retry-After.
+    #[error("Muitas tentativas. Tente novamente mais tarde.")]
+    TooManyRequests { retry_after_seconds: u64 },
     #[error("Rota não encontrada")]
     NotFound,
     #[error("Método não permitido")]
@@ -68,6 +74,7 @@ impl AppError {
             AppError::Unauthorized | AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound | AppError::NotFoundMessage(_) => StatusCode::NOT_FOUND,
+            AppError::TooManyRequests { .. } => StatusCode::TOO_MANY_REQUESTS,
             AppError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -96,6 +103,17 @@ impl IntoResponse for AppError {
         };
         let body = Json(json!({ "error": message }));
         // O 401 de autenticação diz ao cliente qual esquema usar (RFC 7235). O do login não: lá não há token.
+        if let AppError::TooManyRequests {
+            retry_after_seconds,
+        } = self
+        {
+            return (
+                self.status(),
+                [(RETRY_AFTER, retry_after_seconds.to_string())],
+                body,
+            )
+                .into_response();
+        }
         if matches!(self, AppError::Unauthorized) {
             return (self.status(), [(WWW_AUTHENTICATE, "Bearer")], body).into_response();
         }

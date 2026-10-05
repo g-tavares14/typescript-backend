@@ -111,11 +111,12 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - [ ] Todas as rotas com paridade
 - [ ] Revisão do dono
 
-## Task 11: Rate limit
+## Task 11: Rate limit ✅
 - Aceite: limites iguais aos do TS (login 5, cadastro 3, `DELETE`/`PUT password` 5, `PATCH /users/me` 10 por minuto
   por IP), `429` com `Retry-After` e mensagem em português; nas rotas de `/users/me` o limite roda depois da
   autenticação; desligável só por configuração de teste. Testes Rust equivalentes ao `rate-limit.test.ts`.
-- Conceitos: `tower::Layer`, middleware, `ConnectInfo`.
+- Conceitos: extractor genérico com tipos marcadores (`PhantomData`), `ConnectInfo`, `tokio::spawn`.
+- Desvio do plano: `governor` direto no lugar do `tower_governor` (uma layer rodaria antes do `CurrentUser`).
 - Arquivos: rust/src/app.rs, rust/src/routes/*.rs, rust/tests/
 - Tamanho: M · Depende de: T10
 

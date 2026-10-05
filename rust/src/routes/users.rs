@@ -14,6 +14,7 @@ use crate::{
     error::AppError,
     json::JsonBody,
     password::{hash_password, verify_password},
+    rate_limit::{ChangePassword, DeleteMe, RateLimited, UpdateMe},
     state::AppState,
     token::ACCESS_TOKEN_TTL_SECONDS,
     user_fields::{DUPLICATE_USER, check_new_password, parse_email, parse_username},
@@ -66,9 +67,11 @@ fn parse_changes(body: &Map<String, Value>) -> Result<ProfileChanges, AppError> 
     Ok(changes)
 }
 
+// Nas rotas de /users/me o RateLimited vem DEPOIS do CurrentUser: sem token, 401 sem consumir o limite.
 async fn update_me(
     State(pool): State<PgPool>,
     current: CurrentUser,
+    _limit: RateLimited<UpdateMe>,
     JsonBody(body): JsonBody,
 ) -> Result<Json<PublicUser>, AppError> {
     let changes = parse_changes(&body)?;
@@ -143,6 +146,7 @@ async fn check_current_password(
 async fn delete_me(
     State(pool): State<PgPool>,
     current: CurrentUser,
+    _limit: RateLimited<DeleteMe>,
     JsonBody(body): JsonBody,
 ) -> Result<StatusCode, AppError> {
     let password = confirmation_password(&body, "password")?;
@@ -172,6 +176,7 @@ struct NewTokenResponse {
 async fn change_password_route(
     State(state): State<AppState>,
     current: CurrentUser,
+    _limit: RateLimited<ChangePassword>,
     JsonBody(body): JsonBody,
 ) -> Result<Json<NewTokenResponse>, AppError> {
     // Ordem do schema do TS: currentPassword e depois newPassword (regra do cadastro).

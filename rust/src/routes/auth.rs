@@ -9,6 +9,7 @@ use crate::{
     error::AppError,
     json::JsonBody,
     password::{hash_password, simulate_password_verification, verify_password},
+    rate_limit::{Login, RateLimited, Register},
     state::AppState,
     token::ACCESS_TOKEN_TTL_SECONDS,
     user_fields::{DUPLICATE_USER, check_new_password, parse_email, parse_username},
@@ -30,8 +31,10 @@ struct RegisteredUser {
 }
 
 // Os extractors vêm na ordem dos parâmetros; o corpo (JsonBody) precisa ser o último, porque consome a requisição.
+// O RateLimited vem antes do corpo: corpo inválido também conta no limite.
 async fn register(
     State(pool): State<PgPool>,
+    _limit: RateLimited<Register>,
     JsonBody(body): JsonBody,
 ) -> Result<(StatusCode, Json<RegisteredUser>), AppError> {
     // Validação na ordem do schema do TS (username, email, password): o primeiro erro encontrado é a resposta.
@@ -80,6 +83,7 @@ struct LoginResponse {
 
 async fn login(
     State(state): State<AppState>,
+    _limit: RateLimited<Login>,
     JsonBody(body): JsonBody,
 ) -> Result<Json<LoginResponse>, AppError> {
     // Ordem do schema do TS: email (mesma regra do cadastro) e depois a senha, sem tamanho mínimo (a regra de 8 é do
