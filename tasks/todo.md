@@ -79,7 +79,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - [ ] Cadastro, login, `/users/me` e logout com paridade; conta do TS funciona no Rust e vice-versa
 - [ ] Revisão do dono
 
-## Task 7: `PATCH /users/me`
+## Task 7: `PATCH /users/me` ✅
 - Aceite: `username`/`email` parciais, `null`/tipo errado, `Envie ao menos um campo para alterar`, `409`, `UPDATE ...
   RETURNING`, `0` linhas → `401`. Parte do `PATCH` em `users-update-delete.test.ts` na paridade; corrida em teste Rust.
 - Conceitos: `Option<Option<T>>` (ausente × `null`), SQL dinâmico seguro (`COALESCE` ou `QueryBuilder` com binds).

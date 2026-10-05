@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { isParity } from "./parity.ts";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { transactions, users } from "../src/db/schema.ts";
 import {
@@ -185,7 +186,8 @@ describe("PATCH /users/me", () => {
     expectUnauthorized(await patchMe(token, { username: "novo_nome" }));
   });
 
-  test("conta apagada entre o requireAuth e o UPDATE: 401 padrão", async () => {
+  // Só-TS: injeta um hook no Fastify. Equivalente em Rust: tests/users.rs (update_profile com conta inexistente).
+  test.skipIf(isParity)("conta apagada entre o requireAuth e o UPDATE: 401 padrão", async () => {
     // Arrange: app próprio, com um hook preHandler (roda depois do requireAuth, antes da rota) que apaga a conta.
     // O Fastify aceita hooks novos até o ready, que o primeiro inject dispara.
     const { app: raceApp, db: raceDb } = createTestApp();
@@ -466,7 +468,8 @@ describe("DELETE /users/me", () => {
     expectUnauthorized(await deleteMe(token, { password: userA.password }));
   });
 
-  test("conta apagada depois do requireAuth (hook preHandler): 401 padrão", async () => {
+  // Só-TS: injeta um hook no Fastify. Equivalente em Rust: tests/users.rs.
+  test.skipIf(isParity)("conta apagada depois do requireAuth (hook preHandler): 401 padrão", async () => {
     // Arrange: o hook apaga a conta antes do handler, então aqui é o SELECT do hash que volta vazio.
     const { app: raceApp, db: raceDb } = createTestApp();
     raceApp.addHook("preHandler", async (request) => {
