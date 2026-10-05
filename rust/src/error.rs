@@ -36,6 +36,9 @@ pub enum AppError {
     // 403 com uma mensagem fixa (ex.: senha de confirmação errada; o token é válido, então não é 401).
     #[error("{0}")]
     Forbidden(&'static str),
+    // 404 de um recurso (ex.: "Registro não encontrado"), diferente do 404 de rota inexistente.
+    #[error("{0}")]
+    NotFoundMessage(&'static str),
     #[error("Rota não encontrada")]
     NotFound,
     #[error("Método não permitido")]
@@ -64,7 +67,7 @@ impl AppError {
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Unauthorized | AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::NotFound | AppError::NotFoundMessage(_) => StatusCode::NOT_FOUND,
             AppError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,

@@ -2,9 +2,9 @@
 // consulta filtra pelo user_id do token: é o que isola um usuário do outro.
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, patch},
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -28,7 +28,9 @@ const DATE_ERROR: &str = "Data inválida (use AAAA-MM-DD)";
 const MAX_AMOUNT_CENTS: i64 = 100_000_000_000; // R$ 1 bilhão
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/", get(list).post(create))
+    Router::new()
+        .route("/", get(list).post(create))
+        .route("/{id}", patch(update).delete(remove))
 }
 
 // Um registro como a API mostra (nunca o user_id). Os nomes do banco viram os da API.
@@ -240,4 +242,89 @@ async fn list(
         },
         transactions,
     }))
+}
+
+// ---- PATCH e DELETE /transactions/{id} ----
+
+// Mesma resposta para id inexistente, id inválido e registro de outro usuário: um 403 confirmaria que o id existe.
+const NOT_FOUND: &str = "Registro não encontrado";
+
+// O {id} da URL. Só o formato com hífens (36 caracteres), como o z.uuid() do TS: o Uuid::parse_str também aceitaria
+// a forma sem hífens e com chaves. Id inválido vira 404 sem ir ao banco.
+fn parse_id(text: &str) -> Result<Uuid, AppError> {
+    if text.len() != 36 {
+        return Err(AppError::NotFoundMessage(NOT_FOUND));
+    }
+    Uuid::parse_str(text).map_err(|_| AppError::NotFoundMessage(NOT_FOUND))
+}
+
+// Campo opcional do PATCH: ausente → None; presente → a mesma regra do POST (null ou tipo errado → REQUIRED).
+fn optional<T>(
+    body: &Map<String, Value>,
+    field: &str,
+    parse: impl Fn(&Value) -> Result<T, AppError>,
+) -> Result<Option<T>, AppError> {
+    // `Option::map` aplica a regra se o campo veio; `transpose` vira Option<Result> em Result<Option>.
+    body.get(field).map(parse).transpose()
+}
+
+// Os extractors vêm nesta ordem: CurrentUser (401), Path (texto, nunca falha), JsonBody (erros do corpo).
+// O id é conferido dentro do handler, então a ordem dos erros é a da spec: 401 → corpo → :id → campos → 404.
+async fn update(
+    State(pool): State<PgPool>,
+    current: CurrentUser,
+    Path(id): Path<String>,
+    JsonBody(body): JsonBody,
+) -> Result<Json<PublicTransaction>, AppError> {
+    let id = parse_id(&id)?;
+    let kind = optional(&body, "type", parse_type)?;
+    let amount = optional(&body, "amount", parse_amount)?;
+    let description = optional(&body, "description", parse_description)?;
+    let date = optional(&body, "date", parse_date)?;
+    if kind.is_none() && amount.is_none() && description.is_none() && date.is_none() {
+        return Err(bad_request("Envie ao menos um campo para alterar"));
+    }
+
+    // COALESCE: campo não enviado (NULL) mantém o valor atual. updated_at sempre muda, com o now() do banco.
+    // id e user_id na mesma condição, numa consulta só: registro de outro usuário = 0 linhas = 404.
+    sqlx::query_as!(
+        PublicTransaction,
+        r#"UPDATE transactions
+           SET type = COALESCE($3, type), amount_cents = COALESCE($4, amount_cents),
+               description = COALESCE($5, description), occurred_on = COALESCE($6, occurred_on),
+               updated_at = now()
+           WHERE id = $1 AND user_id = $2
+           RETURNING id, type AS "kind", amount_cents AS "amount", description, occurred_on AS "date",
+                     created_at, updated_at"#,
+        id,
+        current.user.id,
+        kind,
+        amount,
+        description,
+        date,
+    )
+    .fetch_optional(&pool)
+    .await?
+    .map(Json)
+    .ok_or(AppError::NotFoundMessage(NOT_FOUND))
+}
+
+// Exclusão definitiva. Sem corpo.
+async fn remove(
+    State(pool): State<PgPool>,
+    current: CurrentUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    let id = parse_id(&id)?;
+    let deleted = sqlx::query!(
+        "DELETE FROM transactions WHERE id = $1 AND user_id = $2",
+        id,
+        current.user.id
+    )
+    .execute(&pool)
+    .await?;
+    if deleted.rows_affected() == 0 {
+        return Err(AppError::NotFoundMessage(NOT_FOUND));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }

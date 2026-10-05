@@ -100,7 +100,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/routes/transactions.rs
 - Tamanho: M · Depende de: T8
 
-## Task 10: `PATCH` e `DELETE /transactions/:id`
+## Task 10: `PATCH` e `DELETE /transactions/:id` ✅
 - Aceite: `:id` não UUID → `404` sem ir ao banco; `404` igual para outro usuário/inexistente; `PATCH` parcial com
   `updated_at = now()`; ordem dos erros. `transactions-update-delete.test.ts` na paridade.
 - Conceitos: `Path` e rejeição customizada, `uuid::Uuid::parse_str`.

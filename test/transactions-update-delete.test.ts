@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { isParity } from "./parity.ts";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { transactions } from "../src/db/schema.ts";
 import {
@@ -166,7 +167,9 @@ describe("DELETE /transactions/:id", () => {
   });
 
   // O DELETE não tem corpo: com content-type JSON e sem corpo, o Fastify recusa antes da rota (contrato do front).
-  test("content-type application/json sem corpo → 400, e o registro continua existindo", async () => {
+  // Só-TS: o Fastify lê o corpo mesmo numa rota que não usa corpo. No Rust o DELETE ignora o corpo e apaga (204);
+  // diferença documentada em SPEC-migracao-rust.md.
+  test.skipIf(isParity)("content-type application/json sem corpo → 400, e o registro continua existindo", async () => {
     // Arrange
     const token = await createUserWithToken(userA);
     const { id } = await createTransaction(token);
@@ -447,7 +450,7 @@ describe("PATCH /transactions/:id: validação do corpo", () => {
     ["null", { headers: JSON_HEADERS, payload: "null" }],
     ["array", { headers: JSON_HEADERS, payload: "[]" }],
     ["text/plain", { headers: { "content-type": "text/plain" }, payload: "oi" }],
-  ])("corpo raiz inválido (%s) → 400 Corpo da requisição inválido", async (_name, { headers, payload }) => {
+  ])("corpo raiz inválido (%s) → 400 Corpo da requisição inválido", async (name, { headers, payload }) => {
     const { token, id, before } = await arrange();
 
     const response = await app.inject({
@@ -457,6 +460,12 @@ describe("PATCH /transactions/:id: validação do corpo", () => {
       payload,
     });
 
+    // Diferença documentada (SPEC-migracao-rust.md): sem Content-Type ou com text/plain, o axum responde 415.
+    if (isParity && (name === "sem corpo" || name === "text/plain")) {
+      expect(response.statusCode).toBe(415);
+      expect(await listTransactions(token)).toEqual(before);
+      return;
+    }
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual(INVALID_BODY);
     expect(await listTransactions(token)).toEqual(before);

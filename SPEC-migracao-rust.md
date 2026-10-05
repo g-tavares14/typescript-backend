@@ -162,6 +162,7 @@ Preenchida durante a migração: cada caso de borda em que o Rust responde difer
 | Corpo com `Content-Type: text/plain` ou sem `Content-Type` | `400` `Corpo da requisição inválido: envie um objeto JSON` | `415` `Tipo de conteúdo não suportado (use application/json)` |
 | Método errado numa rota que existe (ex.: `POST /health`) | `404` `Rota não encontrada` | `405` `Método não permitido` |
 | Corpo com a chave `__proto__` (ex.: `{"__proto__":{}}`) | `400` `Corpo da requisição inválido: envie um objeto JSON` (proteção do Fastify contra *prototype pollution*) | É uma chave como outra qualquer (Rust não tem protótipos): segue para a validação dos campos, ex.: `400` `Campo obrigatório ausente ou inválido` |
+| `DELETE /transactions/:id` com `Content-Type: application/json` e sem corpo | `400` `Corpo da requisição inválido: envie um objeto JSON` (o Fastify lê o corpo mesmo em rota sem corpo) | `204`: a rota não lê corpo e apaga o registro |
 | URL com codificação inválida (ex.: `/%E0%A4%A`) | `400` `URL inválida` | `404` `Rota não encontrada` (o axum compara o caminho sem decodificar) |
 
 O front já manda `application/json` em toda requisição com corpo e só usa os métodos documentados, então nenhum dos
