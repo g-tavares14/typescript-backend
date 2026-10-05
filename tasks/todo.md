@@ -26,7 +26,7 @@ Plano: [plan.md](plan.md). Cada tarefa: código → `cargo fmt --check` + `cargo
 - Aceite: todos os casos de `users-update-delete` e `users-password` (as corridas já cobertas em `tests/users.rs`).
 - Tamanho: M · Depende de: R3
 
-## R5: Porte — transações
+## R5: Porte — transações ✅
 - Aceite: todos os casos de `transactions` e `transactions-update-delete`.
 - Tamanho: M · Depende de: R4
 
