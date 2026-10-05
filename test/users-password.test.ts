@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+import { isParity } from "./parity.ts";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { users } from "../src/db/schema.ts";
 import {
@@ -150,7 +151,8 @@ describe("PUT /users/me/password: autenticação", () => {
     expectUnauthorized(await putPassword(token, { currentPassword: userA.password, newPassword: NEW_PASSWORD }));
   });
 
-  test("logout entre o requireAuth e o UPDATE: 401 padrão, e a senha não muda", async () => {
+  // Só-TS: injeta um hook no Fastify. Equivalente em Rust: tests/users.rs (change_password com versão antiga).
+  test.skipIf(isParity)("logout entre o requireAuth e o UPDATE: 401 padrão, e a senha não muda", async () => {
     // Arrange: o hook preHandler (depois do requireAuth, antes da rota) revoga os tokens, como um logout em outro
     // dispositivo no meio da requisição. O UPDATE com `token_version` na condição não pode achar a linha.
     const { app: raceApp, db: raceDb } = createTestApp();

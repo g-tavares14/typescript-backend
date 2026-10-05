@@ -86,7 +86,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/routes/users.rs
 - Tamanho: S · Depende de: T6
 
-## Task 8: `DELETE /users/me` e `PUT /users/me/password`
+## Task 8: `DELETE /users/me` e `PUT /users/me/password` ✅
 - Aceite: `403` `Senha incorreta`; `204` + `CASCADE`; troca de senha com `token_version` + 1 e `WHERE token_version`
   numa consulta, token novo. Partes do `DELETE` e `users-password.test.ts` na paridade.
 - Conceitos: reaproveitar funções entre handlers, `RETURNING` com `query_as!`.

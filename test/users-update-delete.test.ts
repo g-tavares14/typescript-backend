@@ -432,8 +432,9 @@ describe("DELETE /users/me", () => {
 
     const response = await deleteMe(token);
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual(INVALID_BODY);
+    // Diferença documentada (SPEC-migracao-rust.md): sem Content-Type, o axum responde 415.
+    expect(response.statusCode).toBe(isParity ? 415 : 400);
+    expect(response.json()).toEqual(isParity ? UNSUPPORTED_MEDIA : INVALID_BODY);
     expect((await getMe(token)).statusCode).toBe(200);
   });
 
@@ -442,8 +443,9 @@ describe("DELETE /users/me", () => {
 
     const response = await deleteMe(token, "senha123", { "content-type": "text/plain" });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual(INVALID_BODY);
+    // Diferença documentada (SPEC-migracao-rust.md): o axum não lê text/plain e responde 415.
+    expect(response.statusCode).toBe(isParity ? 415 : 400);
+    expect(response.json()).toEqual(isParity ? UNSUPPORTED_MEDIA : INVALID_BODY);
   });
 
   test("Content-Type sem parser (application/xml): 415", async () => {

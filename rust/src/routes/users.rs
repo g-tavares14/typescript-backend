@@ -1,5 +1,10 @@
 // Rotas de /users (o equivalente ao src/routes/users.ts). Todas exigem login: cada handler pede um CurrentUser.
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, put},
+};
 use serde_json::{Map, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -8,14 +13,18 @@ use crate::{
     auth::{CurrentUser, PublicUser},
     error::AppError,
     json::JsonBody,
+    password::{hash_password, verify_password},
     state::AppState,
-    user_fields::{DUPLICATE_USER, parse_email, parse_username},
-    validation::{REQUIRED, bad_request},
+    token::ACCESS_TOKEN_TTL_SECONDS,
+    user_fields::{DUPLICATE_USER, check_new_password, parse_email, parse_username},
+    validation::{REQUIRED, bad_request, required_string},
 };
 
 pub fn router() -> Router<AppState> {
     // Duas rotas no mesmo caminho: `get(me).patch(update_me)` junta os métodos.
-    Router::new().route("/me", get(me).patch(update_me))
+    Router::new()
+        .route("/me", get(me).patch(update_me).delete(delete_me))
+        .route("/me/password", put(change_password_route))
 }
 
 // O extractor já validou o token e leu o usuário: aqui é só devolver.
@@ -95,4 +104,120 @@ pub async fn update_profile(
         }
         Err(error) => Err(error.into()),
     }
+}
+
+// 403 (e não 401) quando a confirmação de senha falha: o token é válido, e o 401 faria o front deslogar o usuário.
+const WRONG_PASSWORD: &str = "Senha incorreta";
+
+// Senha de confirmação: string não vazia, sem tamanho mínimo (como no login).
+fn confirmation_password<'a>(
+    body: &'a Map<String, Value>,
+    field: &str,
+) -> Result<&'a str, AppError> {
+    let password = required_string(body, field)?;
+    if password.is_empty() {
+        return Err(bad_request(REQUIRED));
+    }
+    Ok(password)
+}
+
+// Confere a senha atual do usuário. O hash é lido só aqui: o CurrentUser não o carrega, para ele nunca chegar
+// perto de uma resposta. Conta apagada depois da autenticação → 401; senha errada → 403.
+async fn check_current_password(
+    pool: &PgPool,
+    user_id: Uuid,
+    password: &str,
+) -> Result<(), AppError> {
+    let row = sqlx::query!("SELECT password_hash FROM users WHERE id = $1", user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    if !verify_password(row.password_hash, password.to_string()).await? {
+        return Err(AppError::Forbidden(WRONG_PASSWORD));
+    }
+    Ok(())
+}
+
+// Exclusão definitiva, com a senha como confirmação (um token roubado sozinho não apaga a conta).
+// Os registros financeiros somem junto (ON DELETE CASCADE no banco).
+async fn delete_me(
+    State(pool): State<PgPool>,
+    current: CurrentUser,
+    JsonBody(body): JsonBody,
+) -> Result<StatusCode, AppError> {
+    let password = confirmation_password(&body, "password")?;
+    check_current_password(&pool, current.user.id, password).await?;
+
+    let deleted = sqlx::query!("DELETE FROM users WHERE id = $1", current.user.id)
+        .execute(&pool)
+        .await?;
+    // `rows_affected()`: quantas linhas o DELETE apagou. 0 = apagada por outra requisição no meio do caminho.
+    if deleted.rows_affected() == 0 {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// Resposta da troca de senha: o mesmo formato do login.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NewTokenResponse {
+    token: String,
+    token_type: &'static str,
+    expires_in: u64,
+}
+
+// Troca de senha. Derruba todos os tokens da conta (token_version + 1) e devolve um token novo, para o
+// dispositivo que trocou continuar logado.
+async fn change_password_route(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    JsonBody(body): JsonBody,
+) -> Result<Json<NewTokenResponse>, AppError> {
+    // Ordem do schema do TS: currentPassword e depois newPassword (regra do cadastro).
+    let current_password = confirmation_password(&body, "currentPassword")?;
+    let new_password = required_string(&body, "newPassword")?;
+    check_new_password(new_password)?;
+
+    check_current_password(&state.pool, current.user.id, current_password).await?;
+    let new_hash = hash_password(new_password.to_string()).await?;
+    let new_version = change_password(
+        &state.pool,
+        current.user.id,
+        current.token_version,
+        &new_hash,
+    )
+    .await?;
+
+    let token = state
+        .tokens
+        .create_access_token(current.user.id, new_version)?;
+    Ok(Json(NewTokenResponse {
+        token,
+        token_type: "Bearer",
+        expires_in: ACCESS_TOKEN_TTL_SECONDS,
+    }))
+}
+
+// Hash e versão numa consulta só. O `token_version` do token na condição impede a troca se ele foi revogado no
+// meio do caminho (logout ou outra troca de senha em outro dispositivo): 0 linhas → 401, nada muda.
+// O incremento é do banco: duas trocas simultâneas não se atropelam. Devolve a versão nova.
+pub async fn change_password(
+    pool: &PgPool,
+    user_id: Uuid,
+    token_version: i32,
+    new_hash: &str,
+) -> Result<i32, AppError> {
+    let row = sqlx::query!(
+        "UPDATE users SET password_hash = $1, token_version = token_version + 1
+         WHERE id = $2 AND token_version = $3
+         RETURNING token_version",
+        new_hash,
+        user_id,
+        token_version,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+    Ok(row.token_version)
 }

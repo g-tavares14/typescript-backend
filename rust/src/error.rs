@@ -33,6 +33,9 @@ pub enum AppError {
     // 401 do login (email ou senha errados): a mesma mensagem para os dois casos.
     #[error("Email ou senha inválidos")]
     InvalidCredentials,
+    // 403 com uma mensagem fixa (ex.: senha de confirmação errada; o token é válido, então não é 401).
+    #[error("{0}")]
+    Forbidden(&'static str),
     #[error("Rota não encontrada")]
     NotFound,
     #[error("Método não permitido")]
@@ -60,6 +63,7 @@ impl AppError {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Unauthorized | AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
