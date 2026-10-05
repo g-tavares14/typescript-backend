@@ -4,13 +4,13 @@ Instruções para qualquer agente de IA (Claude, Copilot, Cursor, etc.) que trab
 
 ## Papel do agente: escreve o código, o dono revisa
 
-O dono do repositório faz o **backend em TypeScript** de um projeto em dupla (um amigo faz o frontend).
+O dono do repositório faz o **backend em Rust** de um projeto em dupla (um amigo faz o frontend); o objetivo do Rust é estudo.
 O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega deve ser fácil de revisar.
 
 ### O agente DEVE
 
-- Implementar em passos pequenos, verificando cada um (`npm run typecheck` e testes reais com `curl`) antes de seguir.
-- Ao terminar, explicar **o que mudou e por quê**, destacando conceitos novos de TypeScript, Node.js, Fastify ou Drizzle.
+- Implementar em passos pequenos, verificando cada um (`cargo clippy`, `cargo test` e testes reais com `curl`) antes de seguir.
+- Ao terminar, explicar **o que mudou e por quê**, destacando conceitos novos de Rust, tokio, axum ou sqlx.
 - Deixar perguntas de revisão quando houver uma decisão ou um conceito importante no código.
 - Conferir a documentação ou o código da **versão instalada** das bibliotecas antes de usar uma API (os exemplos da internet costumam estar desatualizados).
 - Apontar riscos de segurança, mesmo fora da tarefa pedida.
@@ -26,48 +26,37 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 - Commitar ou dar push sem pedido do dono.
 - Adicionar dependências sem dizer quais e por quê.
-- Editar migrations que já foram aplicadas; criar uma nova no lugar.
+- Editar migrations que já foram aplicadas; criar uma nova no lugar (o `sqlx` recusa uma migration aplicada que mudou: o checksum não confere).
 
 ## Contexto do projeto
 
-- **Etapa atual: migração para Rust concluída** (módulo `migracao-rust` do `CAPABILITY-MAP.md`; spec em `SPEC-migracao-rust.md`). Os dois servidores existem lado a lado no repositório (TS em `src/`, Rust em `rust/`), no mesmo banco, e a suíte do vitest passa contra os dois (`npm test` e `npm run test:parity`). Falta decidir se o TS sai. Todas as etapas anteriores estão concluídas (roteiros abaixo, como histórico).
-- Histórico: o projeto começou em Rust (tag `versao-rust`), foi migrado para TypeScript e agora foi reescrito em Rust do zero, para estudo do dono.
+- **Etapa atual: só Rust.** A API foi reescrita em Rust (`SPEC-migracao-rust.md`) e o TypeScript saiu do repositório depois que toda a suíte de testes foi portada para `rust/tests/`. O último commit com o TS é o `53590d7`. Todas as etapas estão concluídas (roteiros abaixo, como histórico).
+- Histórico: o projeto começou em Rust (tag `versao-rust`), foi migrado para TypeScript e depois reescrito em Rust do zero, para estudo do dono. Comentários do tipo "o equivalente ao `src/...ts`" no código apontam para o TS nesse histórico.
 
 ### Stack
-
-| Parte | Escolha |
-|---|---|
-| Linguagem | TypeScript 7 |
-| Runtime | Node.js 22 (executa `.ts` direto, sem etapa de build) |
-| Framework web | Fastify 5 |
-| Banco de dados | PostgreSQL 17 via Docker Compose |
-| ORM e migrations | Drizzle ORM + `drizzle-kit` (driver `pg`) |
-| Validação | `zod` |
-| Hash de senha | `argon2` (argon2id) |
-| Token de login | JWT com `jose` (HS256, expira em 1 hora) |
-| Rate limit | `@fastify/rate-limit` (contadores em memória, por IP) |
-| Configuração | `.env` carregado pelo próprio Node (`--env-file-if-exists`) |
-| Logs | `pino` (logger embutido do Fastify) |
-
-### Stack da versão em Rust (`rust/`)
 
 | Parte | Escolha |
 |---|---|
 | Linguagem | Rust stable, edição 2024 |
 | Runtime assíncrono | `tokio` |
 | Framework web | `axum` 0.8 (+ `tower-http`: limite de corpo e pânico → 500) |
-| Banco de dados | `sqlx` 0.9 (`query!`/`query_as!` conferidas contra o banco na compilação); o mesmo banco e as migrations do `drizzle-kit` |
+| Banco de dados | PostgreSQL 17 via Docker Compose; `sqlx` 0.9 (`query!`/`query_as!` conferidas contra o banco na compilação) |
+| Migrations | `sqlx migrate` (`sqlx-cli`), arquivos em `rust/migrations/` |
 | JSON | `serde` / `serde_json`; validação dos corpos escrita à mão |
-| Hash de senha | `argon2` (argon2id, 64 MiB, `t=3`, `p=4`: os parâmetros do `node-argon2`) |
-| Token de login | `jsonwebtoken` (HS256, `leeway = 0`), compatível com os tokens do TS |
+| Hash de senha | `argon2` (argon2id, 64 MiB, `t=3`, `p=4`) |
+| Token de login | `jsonwebtoken` (HS256, `leeway = 0`, expira em 1 hora) |
 | Rate limit | `governor` (GCRA, por IP, em memória), como extractor |
+| Configuração | `.env` lido com `dotenvy` (procura no diretório atual e nos de cima) |
 | Erros e logs | `thiserror` (`AppError`) e `tracing` |
+
+### Estrutura
 
 ```
 rust/
 ├── Cargo.toml       # dependências; argon2/blake2 otimizados também no build de dev
+├── migrations/      # SQL das migrations (0000..0004 vieram do drizzle-kit); nunca editar uma já aplicada
 ├── src/
-│   ├── main.rs      # config, pool, rate limit (RUST_RATE_LIMIT), limpeza dos contadores, serve com ConnectInfo
+│   ├── main.rs      # config, pool, limpeza dos contadores do rate limit, serve com ConnectInfo
 │   ├── lib.rs       # declara os módulos (os testes usam o crate como biblioteca)
 │   ├── app.rs       # build_app(state) e finish(): 404/405, corpo de 1 MiB, pânico → 500
 │   ├── state.rs     # AppState { pool, tokens, limits } + FromRef para PgPool
@@ -83,49 +72,15 @@ rust/
 │   ├── models/{user,transaction}.rs  # PublicUser e PublicTransaction (o que sai nas respostas)
 │   ├── routes.rs
 │   └── routes/{health,auth,users,transactions}.rs  # handlers e SQL
-└── tests/           # integração com Router::oneshot: erros, auth, users (corridas), rate limit, health
-test/parity.ts       # modo paridade: com API_URL, o app dos testes vira um cliente HTTP do servidor Rust
-```
-
-### Estrutura
-
-```
-src/
-├── server.ts        # ponto de entrada: lê a config, conecta no banco, sobe o servidor
-├── app.ts           # monta o Fastify: error handler, campo `user` da requisição, rate limit e rotas
-├── config.ts        # variáveis de ambiente (fail fast se faltar alguma)
-├── db/
-│   ├── client.ts    # pool de conexões + Drizzle
-│   └── schema.ts    # definição das tabelas (fonte das migrations)
-├── lib/
-│   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user e request.tokenVersion, ou 401 padrão),
-│   │                    # currentUser(request), currentTokenVersion(request),
-│   │                    # unauthorized(reply) e publicUserColumns (colunas do usuário que podem sair numa resposta)
-│   ├── user-fields.ts  # usernameSchema, emailSchema e passwordSchema (cadastro, login, PATCH /users/me e troca de senha)
-│   │                   # e DUPLICATE_USER
-│   ├── db-errors.ts  # isUniqueViolation(): código 23505 do Postgres dentro do erro do Drizzle
-│   ├── password.ts  # hash e verificação de senha
-│   ├── token.ts     # geração e verificação do JWT
-│   ├── validation.ts  # badRequest() (400 com a primeira mensagem do Zod), `required` e `INVALID_BODY`
-│   └── errors.ts    # sendError(): resposta de todo erro (4xx em português, por error.code; 5xx genérico + log)
-└── routes/
-    ├── health.ts    # GET /health
-    ├── auth.ts      # POST /auth/register, /auth/login e /auth/logout
-    ├── users.ts     # GET, PATCH (username/email) e DELETE (com senha) /users/me e PUT /users/me/password
-    └── transactions.ts  # POST, GET (lista + totais, filtro from/to), PATCH /:id (parcial) e DELETE /:id
-test/
-├── global-setup.ts  # cria o banco de testes (_test) e aplica as migrations
-├── helpers.ts       # createTestApp (rate limit desligado por padrão) e atalhos de cadastro/login
-├── register.test.ts, login.test.ts, users-me.test.ts, logout.test.ts
-├── users-update-delete.test.ts  # PATCH e DELETE /users/me (normalização, 409, validação, senha, CASCADE, corrida, 401)
-├── users-password.test.ts  # PUT /users/me/password (token novo, tokens antigos caem, 403, validação, corrida, 401)
-├── transactions.test.ts  # POST e GET /transactions (validação, totais, ordem, filtro, isolamento, 401)
-├── transactions-update-delete.test.ts  # PATCH e DELETE /transactions/:id (parcial, updatedAt, validação, ordem dos erros, isolamento, 404, 401)
-├── require-auth.test.ts  # requireAuth roda antes do parse do corpo; currentUser sem hook; falha do banco no hook
-├── errors.test.ts  # sendError: 4xx em português (corpo inválido, 404, 413, 415, URL malformada, 429, 401 antes do 400),
-│                   # warn só com o code em FST_* sem mapeamento, 5xx genérico + log (inclusive via frameworkErrors)
-└── rate-limit.test.ts  # único que liga o rate limit, com os limites reais (login, cadastro, PATCH, DELETE e PUT password de /users/me)
-drizzle/             # migrations SQL geradas pelo drizzle-kit
+└── tests/
+    ├── common/mod.rs  # cria e migra o banco *_test, TestApp (requisições encadeadas), atalhos de cadastro/login
+    ├── register.rs, login.rs, logout.rs, users_me.rs
+    ├── users_update_delete.rs, users_password.rs, users.rs (corridas)
+    ├── transactions.rs, transactions_update_delete.rs
+    ├── errors.rs    # erros do framework (inclusive Content-Length errado por TCP de verdade)
+    ├── auth.rs      # 401 antes do corpo; banco fora do ar na autenticação
+    ├── rate_limit.rs  # único com o rate limit ligado, com os limites reais
+    └── health.rs
 .claude/
 ├── agents/          # implementador e revisor (Sonnet 5.5, esforço alto)
 ├── skills/          # skills do projeto, copiadas do catálogo agent-skills e adaptáveis aqui
@@ -138,37 +93,33 @@ drizzle/             # migrations SQL geradas pelo drizzle-kit
 
 ```bash
 docker compose up -d                          # sobe o Postgres
-npm run dev                                   # servidor com reload automático
-npm start                                     # servidor
-npm run typecheck                             # verificação de tipos (tsc)
-npm test                                      # testes automatizados (vitest, banco *_test)
-npm run db:generate -- --name <nome>          # gera migration a partir do schema.ts
-npm run db:migrate                            # aplica as migrations
-cd rust && cargo run                          # servidor Rust na porta 3001 (lê o ../.env)
-cd rust && cargo test                         # testes em Rust (cria e migra o banco *_test sozinho)
+cd rust && cargo run                          # servidor na porta 3001 (lê o ../.env)
+cd rust && cargo test                         # testes (cria e migra o banco *_test sozinho)
 cd rust && cargo clippy --all-targets -- -D warnings && cargo fmt --check
-npm run test:parity                           # compila o Rust e roda a suíte do vitest contra ele (porta 3101)
+cd rust && sqlx migrate add <nome>            # cria uma migration nova em rust/migrations
+cd rust && sqlx migrate run                   # aplica as migrations no banco do DATABASE_URL (../.env)
+cd rust && sqlx migrate info                  # o que já foi aplicado
 ```
 
-O `query!` do `sqlx` confere o SQL contra o banco de dev na compilação: o Postgres precisa estar de pé para compilar o Rust.
+O `query!` do `sqlx` confere o SQL contra o banco de dev na compilação: o Postgres precisa estar de pé (e migrado) para compilar.
+O `sqlx-cli` é instalado com `cargo install sqlx-cli --no-default-features --features rustls,postgres`.
 
-A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env`. O `.env` não é versionado; `.env.example` é o modelo.
+A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env`. O `.env` não é versionado; `.env.example` é o modelo. O `.env.test` (versionado, só valores de teste) aponta para o banco `*_test`.
 
 ### Convenções
 
-- Imports relativos com extensão `.ts` (exigência do Node ao executar TypeScript direto).
-- Só sintaxe de TypeScript que pode ser "apagada" (`erasableSyntaxOnly`): nada de `enum`, `namespace` ou parameter properties.
-- Respostas da API em JSON. Erros no formato `{ "error": "mensagem" }`.
-- Rotas são plugins do Fastify que recebem o `db` nas opções.
+- Respostas da API em JSON. Erros no formato `{ "error": "mensagem" }`, sempre por `AppError`.
+- Cada grupo de rotas expõe `router() -> Router<AppState>`; o `app.rs` monta com `nest`.
+- Regras de campo em `validation/`, devolvendo `Result<T, AppError>`; handlers só leem o corpo, chamam as regras e fazem o SQL.
+- SQL com `query!`/`query_as!` (verificado na compilação). SQL montado em tempo de execução só nos testes, com `AssertSqlSafe` e o valor conferido antes.
+- Testes de integração em `rust/tests/`, um arquivo por recurso, com `mod common;` e `TestApp`.
 
 ## Decisões registradas
 
-- **TypeScript em vez de Rust**: decisão do dono, por relevância de mercado.
+- **Rust, para estudo** (`SPEC-migracao-rust.md`): o projeto passou por TypeScript por relevância de mercado; voltou a Rust porque o dono quer aprender a linguagem. O agente escreve e o dono lê.
 - **Skills e agentes no próprio repo** (`.claude/`), não globais: o catálogo é o repositório `g-tavares14/agent-skills`, instalado pelo `/agent-skills:setup-project` (núcleo fixo, com `security-and-hardening`). A `spec` e a `plan` sugerem skills do `.claude/catalog.md`; só entram as aprovadas pelo dono (`/agent-skills:setup-project add <skill>`). Skills só deste projeto são criadas direto em `.claude/skills/`. Atalhos do fluxo: `/spec`, `/plan`, `/build`, `/verify`, `/review`.
-- **Fastify + Drizzle**: Fastify pela estrutura simples de rotas e bom suporte a TypeScript;
-  Drizzle por ser leve, com sintaxe próxima de SQL e tipos inferidos direto do schema.
-- **Sem etapa de build**: o Node 22 executa `.ts` removendo os tipos; o `tsc` é usado só para verificar os tipos.
-- **Migrations geradas pelo `drizzle-kit`** a partir do `src/db/schema.ts`. Sempre revisar o SQL gerado antes de aplicar.
+- **axum + sqlx**: axum pelos extractors (autenticação, rate limit e corpo viram parâmetros do handler, na ordem certa); sqlx pelo SQL escrito à mão e conferido contra o banco na compilação, sem ORM.
+- **Migrations pelo `sqlx migrate`**, SQL escrito à mão em `rust/migrations/`. As 5 primeiras vieram do `drizzle-kit`; no banco de dev, a tabela `_sqlx_migrations` foi copiada de um banco migrado do zero, depois de conferir que o schema era idêntico. O schema `drizzle` que sobrou no banco de dev não é usado.
 - **`409` mantido no cadastro** (email ou username em uso): o usuário precisa saber o motivo; aceitamos revelar quais emails têm conta, e o rate limit torna a varredura em massa lenta.
 - **`role` fora do JWT**: a role pode mudar no banco e o token ficaria desatualizado; quem precisa dela lê `GET /users/me`.
 - **`/users/me` no lugar de `/auth/me`**: o usuário atual é um recurso, e `/auth` fica para as ações de sessão (cadastro, login, logout). Isso também deixa espaço para `PATCH /users/me` e `PUT /users/me/password`.
@@ -176,36 +127,37 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **Username só `a-z0-9_`, salvo em minúsculas** (`CHECK` no banco): impede personificação com `Joao`/`joao`, acentos, letras parecidas de outros alfabetos e caracteres invisíveis; o `UNIQUE` vira case-insensitive.
 - **Valores em centavos inteiros** (`amount`, `bigint` no banco): nunca float para dinheiro; `19.9`, `0` e negativos dão `400`. O teto por registro é R$ 1 bilhão (`100000000000`). O front converte ao exibir e ao enviar.
 - **Rota `/transactions`** (e não `/users/me/transactions`): o recurso é sempre do usuário do token, como o `/users/me`.
-- **Totais calculados no banco** (`sum` com `FILTER` por tipo + `coalesce(..., 0)` + `.mapWith(Number)`): o `sum` de `bigint` volta como `numeric`, que o `pg` entrega como string. `Number()` é exato até 2^53 centavos (~R$ 90 trilhões).
+- **Totais calculados no banco** (`sum` com `FILTER` por tipo + `coalesce(..., 0)`), convertidos para `i64` no SQL: o `sum` de `bigint` volta como `numeric`. O front recebe número JSON, exato até 2^53 centavos (~R$ 90 trilhões).
 - **Lista e totais em duas consultas, sem transação**: com um `POST` concorrente o `summary` pode ficar um registro fora de sincronia com a lista. Aceito pelo dono. Ambas usam a mesma condição `where` (usuário + `from`/`to`).
-- **`requireAuth` como hook `onRequest`, não `preHandler`**: o 401 vem antes do parse do corpo, e o corpo de quem não está autenticado nem é lido. Hook no plugin inteiro (`users.ts`, `transactions.ts`) ou na opção da rota (`/auth/logout`, porque o plugin `/auth` tem rotas públicas).
-- **`currentUser()` falha alto** (`throw` → 500 genérico + log) se chamado numa rota sem o hook, em vez de devolver `null`: esquecer o `requireAuth` aparece no primeiro teste.
-- **`PATCH` parcial, não `PUT`**: no HTTP, `PUT` substitui o registro inteiro; aqui o front manda só os campos que mudam (`type`, `amount`, `description`, `date`, qualquer combinação; `null` não apaga nada e dá `400`). Schema = `createTransactionSchema.partial()` + `refine` "ao menos um campo".
+- **Autenticação como extractor (`CurrentUser`), o primeiro parâmetro das rotas protegidas**: o 401 vem antes de qualquer erro de corpo, e o corpo de quem não está autenticado nem é lido. Rota que não pede `CurrentUser` não tem acesso ao usuário (o compilador garante).
+- **`PATCH` parcial, não `PUT`**: no HTTP, `PUT` substitui o registro inteiro; aqui o front manda só os campos que mudam (`type`, `amount`, `description`, `date`, qualquer combinação; `null` não apaga nada e dá `400`). As regras de cada campo são as mesmas do `POST` (`validation/transaction_fields.rs`); no SQL, `COALESCE` mantém o que não veio.
 - **`404` igual para registro de outro usuário, inexistente, já excluído e `:id` não UUID** (`Registro não encontrado`), nunca `403`: o `403` confirmaria que o id existe. O `:id` não UUID vira `404` sem ir ao banco (o Postgres daria `500`).
 - **`updated_at` sem versão nem histórico**: só a data da última gravação (`now()` do banco, igual ao `created_at` em registro nunca editado). Edições simultâneas do mesmo campo: vale a última. Um `PATCH` com os mesmos valores também atualiza o `updated_at`; um `PATCH` recusado não altera nada.
-- **`0004` faz o backfill**: o `drizzle-kit` gera só o `ADD COLUMN ... DEFAULT now()`, que daria o horário da migration às linhas antigas; o `UPDATE "transactions" SET "updated_at" = "created_at"` foi acrescentado à migration **antes** de ela ser aplicada.
-- **`DELETE` definitivo**: apaga a linha (sem lixeira nem exclusão lógica). Sem corpo: o front não envia `Content-Type` (com `application/json` e sem corpo o Fastify responde `400`).
+- **`0004` faz o backfill**: só o `ADD COLUMN ... DEFAULT now()` daria o horário da migration às linhas antigas; o `UPDATE "transactions" SET "updated_at" = "created_at"` foi acrescentado à migration **antes** de ela ser aplicada.
+- **`DELETE` definitivo**: apaga a linha (sem lixeira nem exclusão lógica). A rota não lê corpo: um corpo enviado é ignorado.
 - **Convenção de erros de validação** (cadastro, `POST`, `PATCH` e query do `GET`): tipo JSON errado, campo ausente ou query repetida (`?from=a&from=b`, que vira array) → `Campo obrigatório ausente ou inválido`; tipo certo com valor fora da regra → a mensagem do campo. No `PATCH`, campo ausente é permitido (só `null` ou tipo errado dão `required`) e nenhum dos quatro campos → `Envie ao menos um campo para alterar`.
-- **Todo erro 4xx sai em português, em `{ "error": "..." }`**, mapeado por `error.code` (nunca pelo texto da mensagem) num lugar só, `sendError()` em `src/lib/errors.ts`, usada nas duas portas de erro do Fastify (`setErrorHandler` e `frameworkErrors`, que cobre erros gerados antes de escolher a rota):
-  - corpo que não é objeto JSON (ausente, vazio, malformado, `null`, `[]`, texto, `Content-Length` errado) → `400` `Corpo da requisição inválido: envie um objeto JSON` (constante `INVALID_BODY`, em `src/lib/validation.ts`, também usada como `error` na raiz dos `z.object` de corpo; as mensagens dos campos não mudam);
-  - `415` (tipo de conteúdo), `413` (corpo > 1 MiB), `404` (`setNotFoundHandler`) e `400` de URL malformada (opção `frameworkErrors`) têm mensagem própria, sem repetir URL nem corpo;
-  - outro código `FST_*` → `Requisição inválida`, com o mesmo status, e loga só o código (`warn`, nunca URL, corpo ou a mensagem original); 4xx mapeados e 4xx sem código `FST_*` (ex.: o `429` do rate limit, que mantém a própria mensagem) não são logados;
-  - todo 5xx, inclusive os do próprio Fastify (ex.: `FST_ERR_ASYNC_CONSTRAINT`), sai `Erro interno do servidor` com o erro completo no log.
+- **Todo erro sai em português, em `{ "error": "..." }`**, por um lugar só: o `AppError` (`http/error.rs`) com `IntoResponse`. As rejeições do axum (corpo, tipo de conteúdo, tamanho, rota, método) são convertidas para `AppError` (`http/json.rs` e `app.rs`):
+  - corpo que não é objeto JSON (vazio, malformado, `null`, `[]`, texto JSON, `Content-Length` errado) → `400` `Corpo da requisição inválido: envie um objeto JSON` (`INVALID_BODY`); as mensagens dos campos não mudam;
+  - `415` (sem `Content-Type`, `text/plain` ou outro tipo que não seja JSON), `413` (corpo > 1 MiB), `404` (rota inexistente, inclusive URL malformada) e `405` (método errado) têm mensagem própria, sem repetir URL nem corpo;
+  - todo 5xx (inclusive pânico num handler) sai `Erro interno do servidor`, com o erro completo no log e nada na resposta.
+  Esses casos de borda diferem do antigo servidor TS; a lista para o front está em "Diferenças para o front", no `SPEC-migracao-rust.md`.
 - **`/users/me` sem ações de admin**: cada usuário age só sobre a própria conta. `/users/:id` (admin) fica para uma spec própria, quando houver regras por `role`.
-- **`PATCH /users/me` só `username` e `email`**, com as mesmas regras, normalização e mensagens do cadastro (`user-fields.ts`) e o `409` `Email ou username já cadastrado` (`DUPLICATE_USER`). `role`, `password` e outros campos no corpo são ignorados; corpo sem `username` nem `email` dá `400` `Envie ao menos um campo para alterar`. `UPDATE ... RETURNING` numa consulta só; 0 linhas (conta apagada no meio) → `401` padrão.
+- **`PATCH /users/me` só `username` e `email`**, com as mesmas regras, normalização e mensagens do cadastro (`validation/user_fields.rs`) e o `409` `Email ou username já cadastrado` (`DUPLICATE_USER`). `role`, `password` e outros campos no corpo são ignorados; corpo sem `username` nem `email` dá `400` `Envie ao menos um campo para alterar`. `UPDATE ... RETURNING` numa consulta só; 0 linhas (conta apagada no meio) → `401` padrão.
 - **Trocar o email não pede senha** (decisão do dono). **Risco**: quando existir recuperação de senha por email, trocar o email com um token vazado vira jeito de tomar a conta; nessa etapa, voltar a exigir a senha (ou confirmar pelo email antigo).
-- **`DELETE /users/me` definitivo, com `{ "password" }` no corpo**: apaga o usuário e, pelo `CASCADE`, os registros financeiros dele. Senha errada → `403` `Senha incorreta` (não `401`, para o front não tratar como sessão expirada e deslogar); o hash é lido só nessa rota (o `currentUser()` não carrega `passwordHash`). Corpo com `text/plain` dá `INVALID_BODY` (o Fastify tem parser de texto); só tipo sem parser (ex.: `application/xml`) dá `415`.
-- **`PUT /users/me/password`** com `{ currentPassword, newPassword }` (a nova com a regra do cadastro, `passwordSchema`; igual à atual é aceita). Senha atual errada → `403` `Senha incorreta`. Grava o hash e incrementa `token_version` numa consulta só, com `WHERE id AND token_version` do token (logout no meio → `0` linhas → `401`, nada muda), e responde `200` com um **token novo** no formato do login: os outros dispositivos caem, o atual continua logado. A versão do token fica em `request.tokenVersion`, fora do `user`, para nunca sair numa resposta.
-- **Rust de novo, agora para estudo** (`SPEC-migracao-rust.md`): o dono quer aprender Rust; o agente escreve e o dono lê. A decisão "TypeScript em vez de Rust" continua valendo para o mercado; o TS fica no repo até o Rust passar na paridade. Casos de borda de framework seguem o axum (listados na spec, em "Diferenças para o front"); regras de negócio e de segurança não mudam.
-- **Rust: paridade pela suíte do vitest** (`test/parity.ts`): com `API_URL`, `createTestApp()` devolve um cliente HTTP (um `Proxy` que só tem `inject`/`close`), e o `global-setup` sobe o binário Rust no banco `_test` com o rate limit desligado. Testes que usam internos do Fastify ficam `skipIf(isParity)`, cada um com equivalente em `rust/tests/`.
-- **Rust: casos de borda de framework seguem o axum** (decisão do dono), listados em "Diferenças para o front" na spec: `415` sem `Content-Type`/`text/plain`, `405` para método errado, `404` para URL malformada, `__proto__` como chave comum, `DELETE` que ignora o corpo e o rate limit por GCRA.
-- **Rust: rate limit como extractor (`governor`), não como layer (`tower_governor`)**: a layer rodaria antes do `CurrentUser` e contaria requisições sem token.
-- **Rust: o mesmo banco, migrations só pelo `drizzle-kit`**: o Rust não cria nem altera tabelas. Hashes (mesmos parâmetros do argon2) e tokens (mesmo `JWT_SECRET`, HS256) valem nos dois servidores.
+- **`DELETE /users/me` definitivo, com `{ "password" }` no corpo**: apaga o usuário e, pelo `CASCADE`, os registros financeiros dele. Senha errada → `403` `Senha incorreta` (não `401`, para o front não tratar como sessão expirada e deslogar); o hash é lido só nessa rota e na troca de senha (o `CurrentUser` não carrega o hash).
+- **`PUT /users/me/password`** com `{ currentPassword, newPassword }` (a nova com a regra do cadastro; igual à atual é aceita). Senha atual errada → `403` `Senha incorreta`. Grava o hash e incrementa `token_version` numa consulta só, com `WHERE id AND token_version` do token (logout no meio → `0` linhas → `401`, nada muda), e responde `200` com um **token novo** no formato do login: os outros dispositivos caem, o atual continua logado. A versão do token fica em `CurrentUser.token_version`, fora do `PublicUser`, para nunca sair numa resposta.
+- **Testes portados do vitest** (`rust/tests/`): um arquivo por arquivo do vitest, com os mesmos casos. Os casos em tabela (`test.each`) viraram um teste com um laço, com o nome do caso em cada asserção. Os testes de internos do Fastify não foram portados; o comportamento que eles protegiam (500 genérico, pânico, banco fora do ar) tem teste próprio.
+- **Testes no mesmo banco `_test`, em paralelo por arquivo**: cada `TestApp` segura uma trava (`Mutex` do tokio) do começo ao fim do teste e limpa as tabelas ao começar.
+- **Rate limit como extractor (`governor`), não como layer (`tower_governor`)**: a layer rodaria antes do `CurrentUser` e contaria requisições sem token. Desligável só no código (`without_rate_limit()`), nunca por variável de ambiente.
 - **Rate limit em memória, por IP** (login 5/min, cadastro 3/min, `DELETE /users/me` 5/min, `PATCH /users/me` 10/min, `PUT /users/me/password` 5/min; conta toda requisição autenticada, inclusive os `400`): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
-  Nas rotas de `/users/me` o hook do limite é da rota e roda depois do `requireAuth` do plugin: sem token vem `401` e a requisição não consome o limite.
-  Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
-  Com mais de um processo, os contadores não são compartilhados: trocar o store por Redis.
+  Nas rotas de `/users/me` o `RateLimited` vem depois do `CurrentUser`: sem token vem `401` e a requisição não consome o limite. O GCRA libera a cota aos poucos (o `Retry-After` fica em até ~12 s), em vez de zerar a cada minuto.
+  O IP vem da conexão (`ConnectInfo`). Atrás de proxy reverso ou CDN (ex.: Cloudflare) é **obrigatório** ler o IP real de um header confiável; senão todos compartilham o IP do proxy e são bloqueados juntos.
+  Com mais de um processo, os contadores não são compartilhados: seria preciso um store externo (ex.: Redis).
   Rotas inexistentes (`404`) não têm rate limit: varredura de rotas só é freada pelo que houver na frente (ex.: um proxy ou CDN).
+
+## Roteiros das etapas (histórico)
+
+As etapas até a de endpoints restantes foram feitas no servidor TypeScript: os nomes de arquivos e funções citados nelas são do TS (no histórico do git).
 
 ## Roteiro da etapa de autenticação (concluída)
 
@@ -275,15 +227,24 @@ Spec em `SPEC-migracao-rust.md`, plano em `tasks/plan.md`, tarefas em `tasks/tod
 3. ✅ **`PATCH /users/me`** (T7), **`DELETE /users/me` e troca de senha** (T8), **`POST`/`GET /transactions`** (T9), **`PATCH`/`DELETE /transactions/:id`** (T10).
 4. ✅ **Rate limit** (T11) e **documentação** (T12).
 
+## Roteiro da remoção do TypeScript (concluída)
+
+Plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
+
+1. ✅ **Migrations no sqlx** (R1) e **helpers de teste** (R2).
+2. ✅ **Porte da suíte do vitest** (R3–R6).
+3. ✅ **TypeScript removido e documentação** (R7).
+
 ### Regras de segurança (verificar em toda mudança)
 
-- Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais (cuidado com os parâmetros de consultas nos erros do Drizzle).
-- Login com email ou senha errados retorna a **mesma** mensagem de erro.
+- Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais.
+- Login com email ou senha errados retorna a **mesma** mensagem de erro (com verificação simulada quando o email não existe).
 - A `role` nunca vem da requisição: novos usuários usam o `DEFAULT` do banco.
-- `JWT_SECRET` vem do ambiente, nunca fica fixo no código. Tokens com expiração (`exp`).
-- Consultas sempre parametrizadas (o Drizzle faz isso); nunca montar SQL concatenando strings. No `sql\`...\``, só interpolar valores, nunca texto de SQL vindo de fora.
+- `JWT_SECRET` vem do ambiente, nunca fica fixo no código. Tokens com expiração (`exp`), `leeway = 0`.
+- Consultas sempre parametrizadas (`$1`, `query!`); nunca montar SQL com `format!` a partir de dados de fora.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
-- Toda rota protegida usa `requireAuth` (hook no plugin ou na rota, `src/lib/authenticate.ts`) e lê o usuário com `currentUser()`: o hook confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição); `UPDATE` e `DELETE` também: `id` e `user_id` na mesma condição, numa consulta só, sem "ler e depois gravar".
+- Toda rota protegida pede `CurrentUser`, que confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição); `UPDATE` e `DELETE` também: `id` e `user_id` na mesma condição, numa consulta só, sem "ler e depois gravar".
 - A troca de senha incrementa `token_version` (derruba os tokens emitidos com a senha antiga); qualquer nova forma de mudar a senha (ex.: recuperação por email) deve fazer o mesmo.
-- Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`; no Rust, `RUST_RATE_LIMIT=off` só no `test/global-setup.ts` e `without_rate_limit()` só em testes).
-- No Rust, toda rota protegida pede `CurrentUser`; nas rotas com limite de `/users/me`, o `RateLimited` vem **depois** do `CurrentUser`, e nas públicas (login, cadastro) **antes** do `JsonBody`. Sem `unwrap()`/`expect()` em caminho de requisição.
+- Nunca desligar o rate limit fora dos testes (`without_rate_limit()` só em `rust/tests/`).
+- Nas rotas com limite de `/users/me`, o `RateLimited` vem **depois** do `CurrentUser`, e nas públicas (login, cadastro) **antes** do `JsonBody`.
+- Sem `unwrap()`/`expect()` em caminho de requisição; argon2 sempre em `spawn_blocking`.

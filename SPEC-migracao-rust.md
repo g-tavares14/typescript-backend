@@ -1,6 +1,7 @@
 # Spec: Migração do backend para Rust
 
-Status: **concluída** (aprovada pelo dono em 2026-10-05). Módulo `migracao-rust` do
+Status: **concluída** (aprovada pelo dono em 2026-10-05). O TypeScript saiu do repositório depois, quando a suíte do
+vitest foi portada para `rust/tests/` (plano em `tasks/plan.md`); o modo paridade descrito abaixo é histórico. Módulo `migracao-rust` do
 [mapa de capacidades](CAPABILITY-MAP.md). Começa só depois de [SPEC-endpoints-restantes.md](SPEC-endpoints-restantes.md).
 
 ## Objetivo
@@ -173,4 +174,4 @@ dois casos aparece no uso normal.
 
 1. Porta do Rust em dev: `3001`, ao lado do TS (`3000`).
 2. Diferenças de framework: seguem o axum (ver Objetivo).
-3. Remover o TS depois da paridade: decidir no fim.
+3. Remover o TS depois da paridade: decidido pelo dono; removido depois de portar a suíte do vitest para Rust.

@@ -34,11 +34,11 @@ Plano: [plan.md](plan.md). Cada tarefa: código → `cargo fmt --check` + `cargo
 - Aceite: cada caso de `rate-limit.test.ts` tem equivalente em `tests/rate_limit.rs` (completar o que faltar).
 - Tamanho: S · Depende de: R5
 
-## R7: Remover o TypeScript e documentar
+## R7: Remover o TypeScript e documentar ✅
 - Aceite: arquivos do TS apagados (lista no plano); `AGENTS.md`, `CAPABILITY-MAP.md`, `.gitignore` e
   `.env.example` só com o Rust; `cargo test` verde.
 - Tamanho: S · Depende de: R6
 
 ## Checkpoint final
-- [ ] Nenhum caso do vitest sem equivalente; `cargo clippy`, `cargo fmt --check`, `cargo test` limpos
+- [x] Nenhum caso do vitest sem equivalente; `cargo clippy`, `cargo fmt --check`, `cargo test` limpos
 - [ ] Revisão do dono; decidir se `rust/` vira a raiz do repositório

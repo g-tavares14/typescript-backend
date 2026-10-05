@@ -45,12 +45,7 @@ async fn main() {
         });
     println!("Servidor Rust ouvindo na porta {}", config.port);
 
-    let mut state = AppState::new(pool, &config.jwt_secret);
-    // Só a suíte de paridade (test/global-setup.ts) desliga o rate limit. Nunca em produção: o aviso fica no log.
-    if std::env::var("RUST_RATE_LIMIT").as_deref() == Ok("off") {
-        tracing::warn!("RATE LIMIT DESLIGADO (RUST_RATE_LIMIT=off): use só em testes");
-        state = state.without_rate_limit();
-    }
+    let state = AppState::new(pool, &config.jwt_secret);
 
     // A cada minuto, os contadores esquecem os IPs que já recuperaram a cota (a memória não cresce sem fim).
     let limits = state.limits.clone();
