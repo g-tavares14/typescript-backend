@@ -18,7 +18,7 @@ Plano: [plan.md](plan.md). Cada tarefa: código → `cargo fmt --check` + `cargo
 - Conceitos: módulo `common` em `tests/`, builder pattern, `OnceCell`/`Mutex` do tokio.
 - Tamanho: M · Depende de: R1
 
-## R3: Porte — erros, health, cadastro, login, logout, `/users/me`, require-auth
+## R3: Porte — erros, health, cadastro, login, logout, `/users/me`, require-auth ✅
 - Aceite: todos os casos não só-TS de `errors`, `register`, `login`, `logout`, `users-me`, `require-auth`.
 - Tamanho: M · Depende de: R2
 
