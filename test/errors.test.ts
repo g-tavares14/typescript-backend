@@ -49,6 +49,9 @@ const UNSUPPORTED = { error: "Tipo de conteúdo não suportado (use application/
 // Diferença documentada (SPEC-migracao-rust.md, "Diferenças para o front"): sem Content-Type ou com text/plain,
 // o Fastify lê o corpo (400) e o axum recusa o tipo (415).
 const RUST_UNSUPPORTED_CASES = new Set(["sem corpo e sem content-type", "text/plain"]);
+// Diferença documentada: o Fastify recusa `__proto__` (prototype pollution); no Rust é uma chave qualquer, e o corpo
+// segue para a validação dos campos (sem nenhum campo obrigatório: "Campo obrigatório ausente ou inválido").
+const RUST_FIELD_VALIDATION_CASES = new Set(["JSON com __proto__"]);
 
 // Corpos que não são um objeto JSON utilizável. Cada caso vira 400 com a mesma mensagem, em qualquer rota com corpo.
 const invalidBodies: Array<[string, { headers?: Record<string, string>; payload?: string }]> = [
@@ -83,6 +86,11 @@ describe("corpo inválido: 400 em português nas 3 rotas com corpo", () => {
       if (isParity && RUST_UNSUPPORTED_CASES.has(caso)) {
         expect(response.statusCode).toBe(415);
         expect(response.json()).toEqual(UNSUPPORTED);
+        return;
+      }
+      if (isParity && RUST_FIELD_VALIDATION_CASES.has(caso)) {
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({ error: "Campo obrigatório ausente ou inválido" });
         return;
       }
       expect(response.statusCode).toBe(400);

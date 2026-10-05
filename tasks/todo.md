@@ -51,12 +51,12 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - [ ] Rust compila limpo, `/health` e erros com paridade
 - [ ] Revisão do dono
 
-## Task 4: `POST /auth/register`
+## Task 4: `POST /auth/register` ✅
 - Aceite: validação e normalização de `username`, `email` e `password` com as mensagens do TS e na mesma ordem;
   hash argon2id com os parâmetros do TS; `201`; `409` `Email ou username já cadastrado` (código `23505`).
   `register.test.ts` passa na paridade.
 - Conceitos: `serde::Deserialize`, `Option`, `match`, funções que devolvem `Result`, `sqlx::query!`.
-- Antes: instalar o `sqlx-cli` (com o pedido do dono) e gerar `.sqlx/` com `cargo sqlx prepare`.
+- `sqlx-cli` e `.sqlx/` (build sem banco) adiados para a T12: o `query!` funciona com o `DATABASE_URL` do `.env`.
 - Arquivos: rust/src/{validation,user_fields,password}.rs, rust/src/routes/auth.rs
 - Tamanho: M · Depende de: T3
 

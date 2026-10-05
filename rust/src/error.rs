@@ -24,6 +24,9 @@ pub enum AppError {
     // 400 com a mensagem da validação (ex.: "Email inválido").
     #[error("{0}")]
     BadRequest(String),
+    // 409 com uma mensagem fixa (ex.: email ou username já cadastrado).
+    #[error("{0}")]
+    Conflict(&'static str),
     #[error("Rota não encontrada")]
     NotFound,
     #[error("Método não permitido")]
@@ -49,6 +52,7 @@ impl AppError {
         // não compila.
         match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,

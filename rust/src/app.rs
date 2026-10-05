@@ -10,7 +10,9 @@ use crate::{error::AppError, routes};
 const BODY_LIMIT_BYTES: usize = 1024 * 1024;
 
 pub fn build_app(pool: PgPool) -> Router {
-    let router = Router::new().nest("/health", routes::health::router());
+    let router = Router::new()
+        .nest("/health", routes::health::router())
+        .nest("/auth", routes::auth::router());
     // O PgPool é barato de clonar (por dentro é um ponteiro com contagem de referências para o mesmo pool),
     // então cada requisição recebe a sua cópia sem abrir conexões novas.
     finish(router).with_state(pool)
