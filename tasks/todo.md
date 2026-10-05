@@ -14,11 +14,12 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/Cargo.toml, rust/src/main.rs, .gitignore
 - Tamanho: XS · Depende de: nada
 
-## Task 1: Config, pool e `GET /health`
+## Task 1: Config, pool e `GET /health` ✅
 - Aceite:
   - `config.rs`: `DATABASE_URL` e `JWT_SECRET` do ambiente (`../.env`), com fail fast e mensagem clara; `PORT` padrão 3001.
   - Pool `sqlx::PgPool`; `GET /health` → `200` com o banco de pé, `503` sem banco (corpos iguais aos do TS).
-  - `sqlx-cli` instalado (com o pedido do dono) e `.sqlx/` gerado.
+  - `sqlx-cli` e `.sqlx/` adiados para a T4: o `/health` usa `sqlx::query` (sem verificação em compilação), e a
+    primeira `query!` só aparece no cadastro.
 - Verificar: teste Rust do `/health`; `curl localhost:3001/health`.
 - Conceitos: `struct`, `Result`/`?`, `std::env`, `State` do axum, `async`/`.await`.
 - Arquivos: rust/src/{main,config,app}.rs, rust/src/routes/{mod,health}.rs
@@ -53,6 +54,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
   hash argon2id com os parâmetros do TS; `201`; `409` `Email ou username já cadastrado` (código `23505`).
   `register.test.ts` passa na paridade.
 - Conceitos: `serde::Deserialize`, `Option`, `match`, funções que devolvem `Result`, `sqlx::query!`.
+- Antes: instalar o `sqlx-cli` (com o pedido do dono) e gerar `.sqlx/` com `cargo sqlx prepare`.
 - Arquivos: rust/src/{validation,user_fields,password}.rs, rust/src/routes/auth.rs
 - Tamanho: M · Depende de: T3
 
