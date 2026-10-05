@@ -1,6 +1,6 @@
 # Spec: Endpoints restantes (troca de senha)
 
-Status: **aprovada pelo dono** (2026-10-05). Módulo `endpoints-restantes` do
+Status: **concluída** (aprovada pelo dono em 2026-10-05). Módulo `endpoints-restantes` do
 [mapa de capacidades](CAPABILITY-MAP.md). Continuação de [SPEC-users-update-delete.md](SPEC-users-update-delete.md).
 
 ## Objetivo
@@ -83,9 +83,9 @@ antes do `400`, corrida (`token_version` mudou no meio) e o `429` com o limite r
 
 ## Success Criteria
 
-- [ ] `PUT /users/me/password` responde conforme todos os critérios acima, com testes.
-- [ ] O cadastro continua com o mesmo comportamento (testes atuais passam sem mudança).
-- [ ] AGENTS.md atualizado (estrutura, decisões, roteiro) e contrato para o front nesta spec.
+- [x] `PUT /users/me/password` responde conforme todos os critérios acima, com testes.
+- [x] O cadastro continua com o mesmo comportamento (testes atuais passam sem mudança).
+- [x] AGENTS.md atualizado (estrutura, decisões, roteiro) e contrato para o front nesta spec.
 
 ## Decisões das perguntas abertas
 

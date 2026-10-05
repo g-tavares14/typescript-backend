@@ -46,7 +46,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/routes/users.ts, test/users-password.test.ts, test/rate-limit.test.ts
 - Tamanho: S · Depende de: T2
 
-## Task 4: Documentação
+## Task 4: Documentação ✅
 - Aceite:
   - AGENTS.md: etapa atual, estrutura (`users.ts`, teste novo), decisões (troca de senha com token novo e
     `token_version`; rate limit 5/min), roteiro da etapa; a regra "A troca de senha (futura) deve incrementar

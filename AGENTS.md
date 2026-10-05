@@ -30,7 +30,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 ## Contexto do projeto
 
-- **Etapa atual: edição e exclusão da própria conta** (`PATCH` e `DELETE /users/me`; spec em `SPEC-users-update-delete.md`, continuação de `SPEC-auth-hardening.md`). As etapas de autenticação e de registros financeiros (`POST`/`GET`, `PATCH`/`DELETE /transactions/:id` e `updatedAt`) estão concluídas (roteiros abaixo, como histórico).
+- **Etapa atual: migração para Rust** (módulo `migracao-rust` do `CAPABILITY-MAP.md`; spec em `SPEC-migracao-rust.md`, plano ainda não feito). A troca de senha (`PUT /users/me/password`, `SPEC-endpoints-restantes.md`) fechou o contrato que o Rust vai copiar. As etapas de autenticação, registros financeiros e edição/exclusão da conta estão concluídas (roteiros abaixo, como histórico).
 - O projeto começou em Rust e foi migrado para TypeScript. A versão em Rust está na tag `versao-rust`.
 
 ### Stack
@@ -60,9 +60,11 @@ src/
 │   ├── client.ts    # pool de conexões + Drizzle
 │   └── schema.ts    # definição das tabelas (fonte das migrations)
 ├── lib/
-│   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user, ou 401 padrão), currentUser(request),
+│   ├── authenticate.ts  # requireAuth(db) (hook onRequest: token -> request.user e request.tokenVersion, ou 401 padrão),
+│   │                    # currentUser(request), currentTokenVersion(request),
 │   │                    # unauthorized(reply) e publicUserColumns (colunas do usuário que podem sair numa resposta)
-│   ├── user-fields.ts  # usernameSchema e emailSchema (cadastro, login só o email, e PATCH /users/me) e DUPLICATE_USER
+│   ├── user-fields.ts  # usernameSchema, emailSchema e passwordSchema (cadastro, login, PATCH /users/me e troca de senha)
+│   │                   # e DUPLICATE_USER
 │   ├── db-errors.ts  # isUniqueViolation(): código 23505 do Postgres dentro do erro do Drizzle
 │   ├── password.ts  # hash e verificação de senha
 │   ├── token.ts     # geração e verificação do JWT
@@ -71,19 +73,20 @@ src/
 └── routes/
     ├── health.ts    # GET /health
     ├── auth.ts      # POST /auth/register, /auth/login e /auth/logout
-    ├── users.ts     # GET, PATCH (username/email) e DELETE (com senha) /users/me
+    ├── users.ts     # GET, PATCH (username/email) e DELETE (com senha) /users/me e PUT /users/me/password
     └── transactions.ts  # POST, GET (lista + totais, filtro from/to), PATCH /:id (parcial) e DELETE /:id
 test/
 ├── global-setup.ts  # cria o banco de testes (_test) e aplica as migrations
 ├── helpers.ts       # createTestApp (rate limit desligado por padrão) e atalhos de cadastro/login
 ├── register.test.ts, login.test.ts, users-me.test.ts, logout.test.ts
 ├── users-update-delete.test.ts  # PATCH e DELETE /users/me (normalização, 409, validação, senha, CASCADE, corrida, 401)
+├── users-password.test.ts  # PUT /users/me/password (token novo, tokens antigos caem, 403, validação, corrida, 401)
 ├── transactions.test.ts  # POST e GET /transactions (validação, totais, ordem, filtro, isolamento, 401)
 ├── transactions-update-delete.test.ts  # PATCH e DELETE /transactions/:id (parcial, updatedAt, validação, ordem dos erros, isolamento, 404, 401)
 ├── require-auth.test.ts  # requireAuth roda antes do parse do corpo; currentUser sem hook; falha do banco no hook
 ├── errors.test.ts  # sendError: 4xx em português (corpo inválido, 404, 413, 415, URL malformada, 429, 401 antes do 400),
 │                   # warn só com o code em FST_* sem mapeamento, 5xx genérico + log (inclusive via frameworkErrors)
-└── rate-limit.test.ts  # único que liga o rate limit, com os limites reais (login, cadastro, PATCH e DELETE /users/me)
+└── rate-limit.test.ts  # único que liga o rate limit, com os limites reais (login, cadastro, PATCH, DELETE e PUT password de /users/me)
 drizzle/             # migrations SQL geradas pelo drizzle-kit
 .claude/
 ├── agents/          # implementador e revisor (Sonnet 5.5, esforço alto)
@@ -148,7 +151,9 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **`PATCH /users/me` só `username` e `email`**, com as mesmas regras, normalização e mensagens do cadastro (`user-fields.ts`) e o `409` `Email ou username já cadastrado` (`DUPLICATE_USER`). `role`, `password` e outros campos no corpo são ignorados; corpo sem `username` nem `email` dá `400` `Envie ao menos um campo para alterar`. `UPDATE ... RETURNING` numa consulta só; 0 linhas (conta apagada no meio) → `401` padrão.
 - **Trocar o email não pede senha** (decisão do dono). **Risco**: quando existir recuperação de senha por email, trocar o email com um token vazado vira jeito de tomar a conta; nessa etapa, voltar a exigir a senha (ou confirmar pelo email antigo).
 - **`DELETE /users/me` definitivo, com `{ "password" }` no corpo**: apaga o usuário e, pelo `CASCADE`, os registros financeiros dele. Senha errada → `403` `Senha incorreta` (não `401`, para o front não tratar como sessão expirada e deslogar); o hash é lido só nessa rota (o `currentUser()` não carrega `passwordHash`). Corpo com `text/plain` dá `INVALID_BODY` (o Fastify tem parser de texto); só tipo sem parser (ex.: `application/xml`) dá `415`.
-- **Rate limit em memória, por IP** (login 5/min, cadastro 3/min, `DELETE /users/me` 5/min, `PATCH /users/me` 10/min): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
+- **`PUT /users/me/password`** com `{ currentPassword, newPassword }` (a nova com a regra do cadastro, `passwordSchema`; igual à atual é aceita). Senha atual errada → `403` `Senha incorreta`. Grava o hash e incrementa `token_version` numa consulta só, com `WHERE id AND token_version` do token (logout no meio → `0` linhas → `401`, nada muda), e responde `200` com um **token novo** no formato do login: os outros dispositivos caem, o atual continua logado. A versão do token fica em `request.tokenVersion`, fora do `user`, para nunca sair numa resposta.
+- **Rust de novo, agora para estudo** (`SPEC-migracao-rust.md`): o dono quer aprender Rust; o agente escreve e o dono lê. A decisão "TypeScript em vez de Rust" continua valendo para o mercado; o TS fica no repo até o Rust passar na paridade. Casos de borda de framework seguem o axum (listados na spec, em "Diferenças para o front"); regras de negócio e de segurança não mudam.
+- **Rate limit em memória, por IP** (login 5/min, cadastro 3/min, `DELETE /users/me` 5/min, `PATCH /users/me` 10/min, `PUT /users/me/password` 5/min; conta toda requisição autenticada, inclusive os `400`): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
   Nas rotas de `/users/me` o hook do limite é da rota e roda depois do `requireAuth` do plugin: sem token vem `401` e a requisição não consome o limite.
   Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
   Com mais de um processo, os contadores não são compartilhados: trocar o store por Redis.
@@ -204,6 +209,15 @@ Spec em `SPEC-users-update-delete.md`, plano em `tasks/plan.md`, tarefas em `tas
 5. ✅ **Rate limit**: `DELETE` 5/min e `PATCH` 10/min por IP, depois do `requireAuth`.
 6. ✅ **Documentação**: este arquivo e a spec (status e critérios).
 
+## Roteiro da etapa de endpoints restantes (concluída)
+
+Spec em `SPEC-endpoints-restantes.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
+
+1. ✅ **`passwordSchema` compartilhado** (`user-fields.ts`), sem mudar o cadastro.
+2. ✅ **`PUT /users/me/password`**: token novo, `token_version` + 1 na mesma consulta, `403`, `401` e corrida; `request.tokenVersion` e `currentTokenVersion()` no `authenticate.ts`.
+3. ✅ **Validação e rate limit** (5/min, depois do `requireAuth`).
+4. ✅ **Documentação**: este arquivo e a spec.
+
 ### Regras de segurança (verificar em toda mudança)
 
 - Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais (cuidado com os parâmetros de consultas nos erros do Drizzle).
@@ -213,5 +227,5 @@ Spec em `SPEC-users-update-delete.md`, plano em `tasks/plan.md`, tarefas em `tas
 - Consultas sempre parametrizadas (o Drizzle faz isso); nunca montar SQL concatenando strings. No `sql\`...\``, só interpolar valores, nunca texto de SQL vindo de fora.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
 - Toda rota protegida usa `requireAuth` (hook no plugin ou na rota, `src/lib/authenticate.ts`) e lê o usuário com `currentUser()`: o hook confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição); `UPDATE` e `DELETE` também: `id` e `user_id` na mesma condição, numa consulta só, sem "ler e depois gravar".
-- A troca de senha (futura) deve incrementar `token_version`, para derrubar os tokens emitidos com a senha antiga.
+- A troca de senha incrementa `token_version` (derruba os tokens emitidos com a senha antiga); qualquer nova forma de mudar a senha (ex.: recuperação por email) deve fazer o mesmo.
 - Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`).
