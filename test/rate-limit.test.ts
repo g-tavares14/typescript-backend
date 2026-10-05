@@ -239,3 +239,39 @@ describe("rotas sem limite", () => {
     }
   });
 });
+
+describe("rate limit em PUT /users/me/password (5 por minuto por IP)", () => {
+  function putPassword(token: string | undefined, currentPassword: string) {
+    return current.app.inject({
+      method: "PUT",
+      url: "/users/me/password",
+      headers: token ? { authorization: bearer(token) } : {},
+      payload: { currentPassword, newPassword: "novaSenha99" },
+    });
+  }
+
+  test("as 5 primeiras tentativas com senha errada dão 403 e a 6ª responde 429", async () => {
+    const token = await tokenForDefaultUser();
+
+    for (let i = 1; i <= 5; i++) {
+      expect((await putPassword(token, "senha-errada")).statusCode).toBe(403);
+    }
+    const blocked = await putPassword(token, defaultUser.password);
+
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toEqual(RATE_LIMIT_ERROR);
+    const retryAfter = Number(blocked.headers["retry-after"]);
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(60);
+  });
+
+  test("sem token responde 401 e não consome o limite (o requireAuth roda antes)", async () => {
+    const token = await tokenForDefaultUser();
+
+    for (let i = 1; i <= 6; i++) {
+      expect((await putPassword(undefined, "x")).statusCode).toBe(401);
+    }
+
+    expect((await putPassword(token, defaultUser.password)).statusCode).toBe(200);
+  });
+});

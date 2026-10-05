@@ -32,7 +32,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - [ ] `npm run typecheck` e `npm test` verdes
 - [ ] Revisão do dono antes de seguir
 
-## Task 3: Validação e rate limit
+## Task 3: Validação e rate limit ✅
 - Aceite:
   - `currentPassword` ausente, vazia, `null` ou tipo errado → `400` `Campo obrigatório ausente ou inválido`.
   - `newPassword` ausente/`null`/tipo errado → `Campo obrigatório ausente ou inválido`; com menos de 8 → `A senha

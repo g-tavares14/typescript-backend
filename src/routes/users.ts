@@ -41,6 +41,9 @@ const WRONG_PASSWORD = "Senha incorreta";
 // roda depois do requireAuth do plugin: sem token vem 401 e a requisição não consome o limite.
 const DELETE_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const UPDATE_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+// Troca de senha: como o DELETE, permite adivinhar a senha atual com um token roubado, e cada tentativa custa até
+// dois hashes argon2 (verificação + hash da nova).
+const PASSWORD_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 
 export const usersRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
   // Todas as rotas deste plugin exigem login. Hook em plugin sem fastify-plugin fica encapsulado nele.
@@ -112,7 +115,7 @@ export const usersRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =
 
   // Troca de senha. Derruba todos os tokens da conta (token_version + 1) e devolve um token novo, para o dispositivo
   // que trocou continuar logado.
-  app.put("/me/password", async (request, reply) => {
+  app.put("/me/password", { config: { rateLimit: PASSWORD_RATE_LIMIT } }, async (request, reply) => {
     const user = currentUser(request);
     const tokenVersion = currentTokenVersion(request);
 

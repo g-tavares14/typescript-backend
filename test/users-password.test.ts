@@ -181,3 +181,80 @@ describe("PUT /users/me/password: autenticação", () => {
     }
   });
 });
+
+describe("PUT /users/me/password: validação", () => {
+  const REQUIRED = { error: "Campo obrigatório ausente ou inválido" };
+  const SHORT = { error: "A senha deve ter no mínimo 8 caracteres" };
+  const INVALID_BODY = { error: "Corpo da requisição inválido: envie um objeto JSON" };
+
+  async function tokenForUserA() {
+    await registerUser(app, userA);
+    return loginUser(app, userA);
+  }
+
+  test.each([
+    ["ausente", { newPassword: NEW_PASSWORD }],
+    ["vazia", { currentPassword: "", newPassword: NEW_PASSWORD }],
+    ["null", { currentPassword: null, newPassword: NEW_PASSWORD }],
+    ["número", { currentPassword: 123, newPassword: NEW_PASSWORD }],
+  ])("currentPassword %s: 400 campo obrigatório", async (_caso, payload) => {
+    const response = await putPassword(await tokenForUserA(), payload);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(REQUIRED);
+  });
+
+  test.each([
+    ["ausente", { currentPassword: userA.password }, REQUIRED],
+    ["null", { currentPassword: userA.password, newPassword: null }, REQUIRED],
+    ["número", { currentPassword: userA.password, newPassword: 12345678 }, REQUIRED],
+    ["com 7 caracteres", { currentPassword: userA.password, newPassword: "1234567" }, SHORT],
+  ])("newPassword %s: 400", async (_caso, payload, expected) => {
+    const response = await putPassword(await tokenForUserA(), payload);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(expected);
+  });
+
+  test("os dois inválidos: a mensagem é a do currentPassword, e a senha não muda", async () => {
+    const token = await tokenForUserA();
+
+    const response = await putPassword(token, { currentPassword: "", newPassword: "123" });
+
+    expect(response.json()).toEqual(REQUIRED);
+    expect((await login(userA.password)).statusCode).toBe(200);
+  });
+
+  test("newPassword curta com currentPassword errada: 400 (a validação vem antes da senha)", async () => {
+    const response = await putPassword(await tokenForUserA(), { currentPassword: "errada", newPassword: "123" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(SHORT);
+  });
+
+  test.each([
+    ["null", "null"],
+    ["array", "[]"],
+    ["texto", '"senha"'],
+  ])("corpo %s: 400 INVALID_BODY", async (_caso, payload) => {
+    const response = await app.inject({
+      method: "PUT",
+      url: "/users/me/password",
+      headers: { authorization: bearer(await tokenForUserA()), "content-type": "application/json" },
+      payload,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual(INVALID_BODY);
+  });
+
+  test("campos a mais são ignorados", async () => {
+    const response = await putPassword(await tokenForUserA(), {
+      currentPassword: userA.password,
+      newPassword: NEW_PASSWORD,
+      role: "admin",
+      tokenVersion: 99,
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("sem token e corpo inválido: 401 antes do 400", async () => {
+    expectUnauthorized(await putPassword(undefined, { currentPassword: "" }));
+  });
+});
