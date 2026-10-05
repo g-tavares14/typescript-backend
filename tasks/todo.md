@@ -4,7 +4,7 @@ Plano: [plan.md](plan.md). Spec: [SPEC-migracao-rust.md](../SPEC-migracao-rust.m
 Cada tarefa: teste falhando → código → `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test` + paridade do
 trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revisão → commit (com o pedido do dono).
 
-## Task 0: Toolchain e esqueleto
+## Task 0: Toolchain e esqueleto ✅
 - Aceite:
   - O dono instalou o Rust (`rustup`, stable) e aprovou a lista de crates do plano.
   - `rust/` criado com `cargo new`; `Cargo.toml` com as crates aprovadas e versões fixadas; `cargo build` limpo.
