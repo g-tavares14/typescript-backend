@@ -1,14 +1,31 @@
 // Monta o Router com todas as rotas (o equivalente ao src/app.ts). Separado do main.rs para os testes montarem
 // o mesmo app sem abrir porta.
-use axum::Router;
+use axum::{Router, extract::DefaultBodyLimit, response::IntoResponse};
 use sqlx::PgPool;
+use tower_http::catch_panic::CatchPanicLayer;
 
-use crate::routes;
+use crate::{error::AppError, routes};
+
+// Limite do corpo: 1 MiB, igual ao padrão do Fastify (o padrão do axum é 2 MB).
+const BODY_LIMIT_BYTES: usize = 1024 * 1024;
 
 pub fn build_app(pool: PgPool) -> Router {
-    Router::new()
-        .nest("/health", routes::health::router())
-        // O PgPool é barato de clonar (por dentro é um ponteiro com contagem de referências para o mesmo pool),
-        // então cada requisição recebe a sua cópia sem abrir conexões novas.
-        .with_state(pool)
+    let router = Router::new().nest("/health", routes::health::router());
+    // O PgPool é barato de clonar (por dentro é um ponteiro com contagem de referências para o mesmo pool),
+    // então cada requisição recebe a sua cópia sem abrir conexões novas.
+    finish(router).with_state(pool)
+}
+
+// Acabamento comum a qualquer Router da API: respostas de 404/405, limite do corpo e pânico → 500.
+// Genérico em `S` (o tipo do estado) para os testes aplicarem o mesmo acabamento num Router de teste.
+pub fn finish<S: Clone + Send + Sync + 'static>(router: Router<S>) -> Router<S> {
+    router
+        .fallback(|| async { AppError::NotFound })
+        // Rota existe, mas não com este método. Diferença para o TS: o Fastify responde 404.
+        .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
+        .layer(DefaultBodyLimit::max(BODY_LIMIT_BYTES))
+        // Um panic num handler derrubaria só a conexão; com esta camada vira o mesmo 500 genérico (com log).
+        .layer(CatchPanicLayer::custom(|_panic| {
+            AppError::internal("panic num handler").into_response()
+        }))
 }

@@ -2,4 +2,6 @@
 // `pub mod x;` diz ao compilador: existe um módulo `x` (no arquivo src/x.rs ou src/x/mod.rs) e ele é público.
 pub mod app;
 pub mod config;
+pub mod error;
+pub mod json;
 pub mod routes;

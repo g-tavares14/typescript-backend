@@ -13,6 +13,13 @@ async fn main() {
     // o ambiente. O `.ok()` descarta o erro de propósito: o .env é opcional, a validação é do Config.
     dotenvy::dotenv().ok();
 
+    // Liga os logs do `tracing` (o pino do TS). Nível pela variável RUST_LOG (ex.: RUST_LOG=debug); padrão info.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+
     // Aqui (e só na inicialização) um erro encerra o processo: fail fast.
     let config = Config::from_env().unwrap_or_else(|message| {
         eprintln!("{message}");

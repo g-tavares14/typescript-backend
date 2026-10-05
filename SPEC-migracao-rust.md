@@ -157,6 +157,14 @@ async fn me(user: CurrentUser) -> Json<PublicUser> {
 
 Preenchida durante a migração: cada caso de borda em que o Rust responde diferente do TS (status e mensagem).
 
+| Caso | TypeScript (Fastify) | Rust (axum) |
+|---|---|---|
+| Corpo com `Content-Type: text/plain` ou sem `Content-Type` | `400` `Corpo da requisição inválido: envie um objeto JSON` | `415` `Tipo de conteúdo não suportado (use application/json)` |
+| Método errado numa rota que existe (ex.: `POST /health`) | `404` `Rota não encontrada` | `405` `Método não permitido` |
+
+O front já manda `application/json` em toda requisição com corpo e só usa os métodos documentados, então nenhum dos
+dois casos aparece no uso normal.
+
 ## Decisões das perguntas abertas
 
 1. Porta do Rust em dev: `3001`, ao lado do TS (`3000`).

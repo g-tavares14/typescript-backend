@@ -952,6 +952,7 @@ dependencies = [
  "argon2",
  "axum",
  "dotenvy",
+ "http-body-util",
  "jsonwebtoken",
  "serde",
  "serde_json",
@@ -1962,6 +1963,7 @@ checksum = "08a05a66a4fdd61cbbe0a1d755ffe0ca6aba159dd4820936a0ff8a8278245b9c"
 dependencies = [
  "bitflags",
  "bytes",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",

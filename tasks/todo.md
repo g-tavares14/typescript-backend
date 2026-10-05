@@ -25,7 +25,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/{main,config,app}.rs, rust/src/routes/{mod,health}.rs
 - Tamanho: S · Depende de: T0
 
-## Task 2: `AppError` e respostas de erro
+## Task 2: `AppError` e respostas de erro ✅
 - Aceite:
   - `enum AppError` + `IntoResponse` → `{ "error": "..." }`; 5xx genérico com log completo via `tracing`.
   - Fallback `404` `Rota não encontrada`; corpo inválido → `INVALID_BODY`; `413` acima de 1 MiB; `415` com a mensagem
