@@ -7,15 +7,14 @@ import { currentUser, requireAuth } from "../lib/authenticate.ts";
 import { isUniqueViolation } from "../lib/db-errors.ts";
 import { hashPassword, simulatePasswordVerification, verifyPassword } from "../lib/password.ts";
 import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
-import { DUPLICATE_USER, emailSchema, usernameSchema } from "../lib/user-fields.ts";
+import { DUPLICATE_USER, emailSchema, passwordSchema, usernameSchema } from "../lib/user-fields.ts";
 import { badRequest, INVALID_BODY, required } from "../lib/validation.ts";
 
-// Validação do corpo da requisição. As regras de username e email são compartilhadas (src/lib/user-fields.ts);
-// a senha não é alterada.
+// Validação do corpo da requisição. As regras de username, email e senha são compartilhadas (src/lib/user-fields.ts).
 const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
-  password: z.string(required).min(8, "A senha deve ter no mínimo 8 caracteres"),
+  password: passwordSchema,
 }, INVALID_BODY);
 
 // No login a senha não tem tamanho mínimo: a regra de 8 caracteres é do cadastro.

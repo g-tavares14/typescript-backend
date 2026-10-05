@@ -17,6 +17,10 @@ export const usernameSchema = z
   // Vem depois dos checks de tamanho, então um username curto continua recebendo a mensagem de tamanho.
   .regex(/^[a-z0-9_]+$/, "O username só pode ter letras sem acento, números e _");
 
+// Regra da senha nova (cadastro e troca de senha). No login e nas confirmações não há tamanho mínimo: contas antigas
+// com senhas menores continuariam conseguindo entrar se a regra mudar.
+export const passwordSchema = z.string(required).min(8, "A senha deve ter no mínimo 8 caracteres");
+
 // Resposta do 409 quando username ou email já pertencem a outra conta (cadastro e edição do usuário).
 // O banco não diz qual dos dois colidiu, e a mensagem também não: uma só para os dois casos.
 export const DUPLICATE_USER = "Email ou username já cadastrado";
