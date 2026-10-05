@@ -12,7 +12,7 @@ Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `
 - Arquivos: src/lib/user-fields.ts, src/routes/auth.ts
 - Tamanho: XS · Depende de: nada
 
-## Task 2: `PUT /users/me/password` (caminho feliz, 403, 401 e corrida)
+## Task 2: `PUT /users/me/password` (caminho feliz, 403, 401 e corrida) ✅
 - Aceite:
   - Senha atual certa → `200` `{ token, tokenType: "Bearer", expiresIn: 3600 }`; o token novo funciona no
     `GET /users/me`; o token antigo dá `401` padrão; login com a senha nova `200`, com a antiga `401`

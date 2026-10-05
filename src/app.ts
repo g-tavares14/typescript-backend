@@ -19,9 +19,10 @@ export function buildApp(db: Db, options: { logger?: boolean; rateLimit?: boolea
   // Rota ou método inexistente. Não repete a URL pedida na resposta.
   app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: "Rota não encontrada" }));
 
-  // Campo do usuário autenticado em toda requisição, preenchido pelo requireAuth (src/lib/authenticate.ts).
+  // Campos do usuário autenticado e da versão do token em toda requisição, preenchidos pelo requireAuth (src/lib/authenticate.ts).
   // Começa como null (valor simples): o Fastify proíbe objeto aqui porque seria compartilhado entre requisições.
   app.decorateRequest("user", null);
+  app.decorateRequest("tokenVersion", null);
 
   // global: false = nenhuma rota é limitada por padrão; só as que declaram config.rateLimit (login e cadastro).
   // O plugin lança o objeto do errorResponseBuilder como erro, então o 429 passa pelo error handler acima

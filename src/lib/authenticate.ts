@@ -19,7 +19,9 @@ export const publicUserColumns = {
   createdAt: users.createdAt,
 };
 
-// Devolve o usuário dono do token, ou null se o token for inválido, estiver revogado ou a conta não existir.
+// Devolve o usuário dono do token e a versão do token, ou null se o token for inválido, estiver revogado ou a conta
+// não existir. A versão fica fora do usuário: ela não pode sair numa resposta, só serve para gravações que precisam
+// conferir que o token continua valendo (ex.: a troca de senha).
 async function authenticate(request: FastifyRequest, db: Db) {
   // Formato "Bearer <token>". O nome do esquema não diferencia maiúsculas (RFC 7235).
   const [scheme, token] = request.headers.authorization?.split(" ") ?? [];
@@ -41,16 +43,18 @@ async function authenticate(request: FastifyRequest, db: Db) {
     .where(and(eq(users.id, claims.userId), eq(users.tokenVersion, claims.tokenVersion)))
     .limit(1);
 
-  return user ?? null;
+  return user ? { user, tokenVersion: claims.tokenVersion } : null;
 }
 
-type AuthenticatedUser = NonNullable<Awaited<ReturnType<typeof authenticate>>>;
+type AuthenticatedUser = NonNullable<Awaited<ReturnType<typeof authenticate>>>["user"];
 
-// Diz ao TypeScript que a requisição tem `user`. O app.ts registra o campo com decorateRequest("user", null),
-// e o requireAuth preenche. `null` = requisição sem autenticação (rotas públicas ou antes do hook).
+// Diz ao TypeScript que a requisição tem `user` e `tokenVersion`. O app.ts registra os campos com
+// decorateRequest(..., null), e o requireAuth preenche. `null` = requisição sem autenticação (rotas públicas ou antes
+// do hook).
 declare module "fastify" {
   interface FastifyRequest {
     user: AuthenticatedUser | null;
+    tokenVersion: number | null;
   }
 }
 
@@ -60,13 +64,14 @@ declare module "fastify" {
 // para plugins irmãos); { onRequest: requireAuth(db) } na opção de uma rota protege só ela.
 export function requireAuth(db: Db): onRequestAsyncHookHandler {
   return async (request, reply) => {
-    const user = await authenticate(request, db);
-    if (!user) {
+    const auth = await authenticate(request, db);
+    if (!auth) {
       unauthorized(reply);
       // O send já respondeu; retornar o reply avisa o Fastify para não rodar o handler.
       return reply;
     }
-    request.user = user;
+    request.user = auth.user;
+    request.tokenVersion = auth.tokenVersion;
   };
 }
 
@@ -79,4 +84,13 @@ export function currentUser(request: FastifyRequest): AuthenticatedUser {
     throw new Error("currentUser() chamado numa rota sem o hook requireAuth");
   }
   return request.user;
+}
+
+// Versão do token da requisição (já conferida com o banco pelo requireAuth). Falha alto pelo mesmo motivo do
+// currentUser(). Usada em gravações que não podem acontecer com um token revogado no meio da requisição.
+export function currentTokenVersion(request: FastifyRequest): number {
+  if (request.tokenVersion === null) {
+    throw new Error("currentTokenVersion() chamado numa rota sem o hook requireAuth");
+  }
+  return request.tokenVersion;
 }

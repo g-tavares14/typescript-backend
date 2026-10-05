@@ -1,12 +1,19 @@
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.ts";
 import { users } from "../db/schema.ts";
-import { currentUser, publicUserColumns, requireAuth, unauthorized } from "../lib/authenticate.ts";
+import {
+  currentTokenVersion,
+  currentUser,
+  publicUserColumns,
+  requireAuth,
+  unauthorized,
+} from "../lib/authenticate.ts";
 import { isUniqueViolation } from "../lib/db-errors.ts";
-import { verifyPassword } from "../lib/password.ts";
-import { DUPLICATE_USER, emailSchema, usernameSchema } from "../lib/user-fields.ts";
+import { hashPassword, verifyPassword } from "../lib/password.ts";
+import { ACCESS_TOKEN_TTL_SECONDS, createAccessToken } from "../lib/token.ts";
+import { DUPLICATE_USER, emailSchema, passwordSchema, usernameSchema } from "../lib/user-fields.ts";
 import { badRequest, INVALID_BODY, required } from "../lib/validation.ts";
 
 // Só username e email podem mudar aqui: chaves desconhecidas (role, password...) são descartadas pelo z.object.
@@ -18,6 +25,16 @@ const updateUserSchema = z
 
 // Confirmação de senha para excluir a conta. Sem tamanho mínimo, como no login: a regra de 8 é só do cadastro.
 const deleteUserSchema = z.object({ password: z.string(required).min(1, required.error) }, INVALID_BODY);
+
+// Troca de senha: a atual sem tamanho mínimo (como no login), a nova com a regra do cadastro. A ordem das chaves é a
+// ordem das mensagens: o Zod valida na ordem declarada e o badRequest responde a primeira.
+const changePasswordSchema = z.object(
+  { currentPassword: z.string(required).min(1, required.error), newPassword: passwordSchema },
+  INVALID_BODY,
+);
+
+// 403 (e não 401) quando a confirmação de senha falha: o token é válido, e o 401 faria o front deslogar o usuário.
+const WRONG_PASSWORD = "Senha incorreta";
 
 // Limites por IP (contadores em memória, como no auth.ts). O DELETE é o mais restrito: com token roubado, é a rota
 // que permite adivinhar a senha, e cada tentativa custa um hash argon2 (64 MiB). O hook do limite é da rota, então
@@ -82,9 +99,8 @@ export const usersRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =
       return unauthorized(reply); // conta apagada depois do requireAuth
     }
 
-    // 403 (e não 401): o token é válido, o que falhou foi a confirmação. O 401 faria o front deslogar o usuário.
     if (!(await verifyPassword(row.passwordHash, parsed.data.password))) {
-      return reply.code(403).send({ error: "Senha incorreta" });
+      return reply.code(403).send({ error: WRONG_PASSWORD });
     }
 
     const deleted = await db.delete(users).where(eq(users.id, user.id)).returning({ id: users.id });
@@ -92,5 +108,45 @@ export const usersRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) =
       return unauthorized(reply); // apagada por outra requisição entre o SELECT e o DELETE
     }
     return reply.code(204).send();
+  });
+
+  // Troca de senha. Derruba todos os tokens da conta (token_version + 1) e devolve um token novo, para o dispositivo
+  // que trocou continuar logado.
+  app.put("/me/password", async (request, reply) => {
+    const user = currentUser(request);
+    const tokenVersion = currentTokenVersion(request);
+
+    const parsed = changePasswordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return badRequest(reply, parsed.error);
+    }
+    const { currentPassword, newPassword } = parsed.data;
+
+    const [row] = await db
+      .select({ passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+    if (!row) {
+      return unauthorized(reply); // conta apagada depois do requireAuth
+    }
+    if (!(await verifyPassword(row.passwordHash, currentPassword))) {
+      return reply.code(403).send({ error: WRONG_PASSWORD });
+    }
+
+    // Hash e versão numa consulta só. O `token_version` do token na condição impede a troca se o token foi revogado
+    // no meio do caminho (logout ou outra troca de senha em outro dispositivo): 0 linhas → 401, nada muda.
+    // O incremento é do banco, como no logout: duas trocas simultâneas não se atropelam.
+    const [updated] = await db
+      .update(users)
+      .set({ passwordHash: await hashPassword(newPassword), tokenVersion: sql`${users.tokenVersion} + 1` })
+      .where(and(eq(users.id, user.id), eq(users.tokenVersion, tokenVersion)))
+      .returning({ id: users.id, tokenVersion: users.tokenVersion });
+    if (!updated) {
+      return unauthorized(reply);
+    }
+
+    const token = await createAccessToken(updated);
+    return reply.send({ token, tokenType: "Bearer", expiresIn: ACCESS_TOKEN_TTL_SECONDS });
   });
 };
