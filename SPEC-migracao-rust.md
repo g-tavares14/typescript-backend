@@ -1,6 +1,6 @@
 # Spec: Migração do backend para Rust
 
-Status: **aprovada pelo dono** (2026-10-05). Módulo `migracao-rust` do
+Status: **concluída** (aprovada pelo dono em 2026-10-05). Módulo `migracao-rust` do
 [mapa de capacidades](CAPABILITY-MAP.md). Começa só depois de [SPEC-endpoints-restantes.md](SPEC-endpoints-restantes.md).
 
 ## Objetivo
@@ -146,12 +146,12 @@ async fn me(user: CurrentUser) -> Json<PublicUser> {
 
 ## Success Criteria
 
-- [ ] A suíte de paridade passa inteira contra o servidor Rust (exceto os testes marcados como só-TS, cada um com
+- [x] A suíte de paridade passa inteira contra o servidor Rust (exceto os testes marcados como só-TS, cada um com
       equivalente em Rust).
-- [ ] Dados criados por uma versão funcionam na outra (login, token, registros).
-- [ ] `cargo clippy -D warnings`, `cargo fmt --check` e `cargo test` limpos.
-- [ ] Todas as regras de segurança do AGENTS.md valem no Rust.
-- [ ] Cada entrega trouxe explicação dos conceitos e perguntas de revisão.
+- [x] Dados criados por uma versão funcionam na outra (login, token, registros).
+- [x] `cargo clippy -D warnings`, `cargo fmt --check` e `cargo test` limpos.
+- [x] Todas as regras de segurança do AGENTS.md valem no Rust.
+- [x] Cada entrega trouxe explicação dos conceitos e perguntas de revisão.
 
 ## Diferenças para o front
 

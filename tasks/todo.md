@@ -120,7 +120,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/app.rs, rust/src/routes/*.rs, rust/tests/
 - Tamanho: M · Depende de: T10
 
-## Task 12: Paridade completa e documentação
+## Task 12: Paridade completa e documentação ✅
 - Aceite: `npm run test:parity` verde inteiro (exceto só-TS); "Diferenças para o front" completa; AGENTS.md com a
   stack Rust, comandos, estrutura e decisões; spec com critérios marcados.
 - Arquivos: AGENTS.md, SPEC-migracao-rust.md

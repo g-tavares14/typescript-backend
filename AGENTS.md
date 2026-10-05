@@ -30,8 +30,8 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 ## Contexto do projeto
 
-- **Etapa atual: migração para Rust** (módulo `migracao-rust` do `CAPABILITY-MAP.md`; spec em `SPEC-migracao-rust.md`, plano ainda não feito). A troca de senha (`PUT /users/me/password`, `SPEC-endpoints-restantes.md`) fechou o contrato que o Rust vai copiar. As etapas de autenticação, registros financeiros e edição/exclusão da conta estão concluídas (roteiros abaixo, como histórico).
-- O projeto começou em Rust e foi migrado para TypeScript. A versão em Rust está na tag `versao-rust`.
+- **Etapa atual: migração para Rust concluída** (módulo `migracao-rust` do `CAPABILITY-MAP.md`; spec em `SPEC-migracao-rust.md`). Os dois servidores existem lado a lado no repositório (TS em `src/`, Rust em `rust/`), no mesmo banco, e a suíte do vitest passa contra os dois (`npm test` e `npm run test:parity`). Falta decidir se o TS sai. Todas as etapas anteriores estão concluídas (roteiros abaixo, como histórico).
+- Histórico: o projeto começou em Rust (tag `versao-rust`), foi migrado para TypeScript e agora foi reescrito em Rust do zero, para estudo do dono.
 
 ### Stack
 
@@ -48,6 +48,39 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 | Rate limit | `@fastify/rate-limit` (contadores em memória, por IP) |
 | Configuração | `.env` carregado pelo próprio Node (`--env-file-if-exists`) |
 | Logs | `pino` (logger embutido do Fastify) |
+
+### Stack da versão em Rust (`rust/`)
+
+| Parte | Escolha |
+|---|---|
+| Linguagem | Rust stable, edição 2024 |
+| Runtime assíncrono | `tokio` |
+| Framework web | `axum` 0.8 (+ `tower-http`: limite de corpo e pânico → 500) |
+| Banco de dados | `sqlx` 0.9 (`query!`/`query_as!` conferidas contra o banco na compilação); o mesmo banco e as migrations do `drizzle-kit` |
+| JSON | `serde` / `serde_json`; validação dos corpos escrita à mão |
+| Hash de senha | `argon2` (argon2id, 64 MiB, `t=3`, `p=4`: os parâmetros do `node-argon2`) |
+| Token de login | `jsonwebtoken` (HS256, `leeway = 0`), compatível com os tokens do TS |
+| Rate limit | `governor` (GCRA, por IP, em memória), como extractor |
+| Erros e logs | `thiserror` (`AppError`) e `tracing` |
+
+```
+rust/
+├── Cargo.toml       # dependências; argon2/blake2 otimizados também no build de dev
+├── src/
+│   ├── main.rs      # config, pool, rate limit (RUST_RATE_LIMIT), limpeza dos contadores, serve com ConnectInfo
+│   ├── lib.rs       # declara os módulos (os testes usam o crate como biblioteca)
+│   ├── app.rs       # build_app(state) e finish(): 404/405, corpo de 1 MiB, pânico → 500
+│   ├── state.rs     # AppState { pool, tokens, limits } + FromRef para PgPool
+│   ├── config.rs    # DATABASE_URL, JWT_SECRET (fail fast), RUST_PORT (padrão 3001)
+│   ├── error.rs     # AppError -> { "error": ... } (status, WWW-Authenticate, Retry-After, 5xx genérico + log)
+│   ├── json.rs      # JsonBody: só objeto JSON; rejeições do axum -> AppError
+│   ├── auth.rs      # extractor CurrentUser (Bearer -> token -> token_version no banco) e PublicUser
+│   ├── rate_limit.rs  # extractor RateLimited<Rota>, um contador por rota
+│   ├── token.rs, password.rs, validation.rs, user_fields.rs, dates.rs
+│   └── routes/{health,auth,users,transactions}.rs
+└── tests/           # integração com Router::oneshot: erros, auth, users (corridas), rate limit, health
+test/parity.ts       # modo paridade: com API_URL, o app dos testes vira um cliente HTTP do servidor Rust
+```
 
 ### Estrutura
 
@@ -106,7 +139,13 @@ npm run typecheck                             # verificação de tipos (tsc)
 npm test                                      # testes automatizados (vitest, banco *_test)
 npm run db:generate -- --name <nome>          # gera migration a partir do schema.ts
 npm run db:migrate                            # aplica as migrations
+cd rust && cargo run                          # servidor Rust na porta 3001 (lê o ../.env)
+cd rust && cargo test                         # testes em Rust (banco *_test; rodar o npm test antes cria o banco)
+cd rust && cargo clippy --all-targets -- -D warnings && cargo fmt --check
+npm run test:parity                           # compila o Rust e roda a suíte do vitest contra ele (porta 3101)
 ```
+
+O `query!` do `sqlx` confere o SQL contra o banco de dev na compilação: o Postgres precisa estar de pé para compilar o Rust.
 
 A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env`. O `.env` não é versionado; `.env.example` é o modelo.
 
@@ -153,6 +192,10 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **`DELETE /users/me` definitivo, com `{ "password" }` no corpo**: apaga o usuário e, pelo `CASCADE`, os registros financeiros dele. Senha errada → `403` `Senha incorreta` (não `401`, para o front não tratar como sessão expirada e deslogar); o hash é lido só nessa rota (o `currentUser()` não carrega `passwordHash`). Corpo com `text/plain` dá `INVALID_BODY` (o Fastify tem parser de texto); só tipo sem parser (ex.: `application/xml`) dá `415`.
 - **`PUT /users/me/password`** com `{ currentPassword, newPassword }` (a nova com a regra do cadastro, `passwordSchema`; igual à atual é aceita). Senha atual errada → `403` `Senha incorreta`. Grava o hash e incrementa `token_version` numa consulta só, com `WHERE id AND token_version` do token (logout no meio → `0` linhas → `401`, nada muda), e responde `200` com um **token novo** no formato do login: os outros dispositivos caem, o atual continua logado. A versão do token fica em `request.tokenVersion`, fora do `user`, para nunca sair numa resposta.
 - **Rust de novo, agora para estudo** (`SPEC-migracao-rust.md`): o dono quer aprender Rust; o agente escreve e o dono lê. A decisão "TypeScript em vez de Rust" continua valendo para o mercado; o TS fica no repo até o Rust passar na paridade. Casos de borda de framework seguem o axum (listados na spec, em "Diferenças para o front"); regras de negócio e de segurança não mudam.
+- **Rust: paridade pela suíte do vitest** (`test/parity.ts`): com `API_URL`, `createTestApp()` devolve um cliente HTTP (um `Proxy` que só tem `inject`/`close`), e o `global-setup` sobe o binário Rust no banco `_test` com o rate limit desligado. Testes que usam internos do Fastify ficam `skipIf(isParity)`, cada um com equivalente em `rust/tests/`.
+- **Rust: casos de borda de framework seguem o axum** (decisão do dono), listados em "Diferenças para o front" na spec: `415` sem `Content-Type`/`text/plain`, `405` para método errado, `404` para URL malformada, `__proto__` como chave comum, `DELETE` que ignora o corpo e o rate limit por GCRA.
+- **Rust: rate limit como extractor (`governor`), não como layer (`tower_governor`)**: a layer rodaria antes do `CurrentUser` e contaria requisições sem token.
+- **Rust: o mesmo banco, migrations só pelo `drizzle-kit`**: o Rust não cria nem altera tabelas. Hashes (mesmos parâmetros do argon2) e tokens (mesmo `JWT_SECRET`, HS256) valem nos dois servidores.
 - **Rate limit em memória, por IP** (login 5/min, cadastro 3/min, `DELETE /users/me` 5/min, `PATCH /users/me` 10/min, `PUT /users/me/password` 5/min; conta toda requisição autenticada, inclusive os `400`): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
   Nas rotas de `/users/me` o hook do limite é da rota e roda depois do `requireAuth` do plugin: sem token vem `401` e a requisição não consome o limite.
   Atrás de proxy reverso é **obrigatório** configurar `trustProxy` no Fastify; senão todos compartilham o IP do proxy e são bloqueados juntos.
@@ -218,6 +261,15 @@ Spec em `SPEC-endpoints-restantes.md`, plano em `tasks/plan.md`, tarefas em `tas
 3. ✅ **Validação e rate limit** (5/min, depois do `requireAuth`).
 4. ✅ **Documentação**: este arquivo e a spec.
 
+## Roteiro da etapa de migração para Rust (concluída)
+
+Spec em `SPEC-migracao-rust.md`, plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
+
+1. ✅ **Esqueleto** (T0), **config + `/health`** (T1), **`AppError`** (T2) e **modo paridade no vitest** (T3).
+2. ✅ **Cadastro** (T4), **JWT + login** (T5), **`CurrentUser`, `/users/me` e logout** (T6).
+3. ✅ **`PATCH /users/me`** (T7), **`DELETE /users/me` e troca de senha** (T8), **`POST`/`GET /transactions`** (T9), **`PATCH`/`DELETE /transactions/:id`** (T10).
+4. ✅ **Rate limit** (T11) e **documentação** (T12).
+
 ### Regras de segurança (verificar em toda mudança)
 
 - Nunca salvar nem logar senha em texto puro. Não logar hash de senha nem dados pessoais (cuidado com os parâmetros de consultas nos erros do Drizzle).
@@ -228,4 +280,5 @@ Spec em `SPEC-endpoints-restantes.md`, plano em `tasks/plan.md`, tarefas em `tas
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
 - Toda rota protegida usa `requireAuth` (hook no plugin ou na rota, `src/lib/authenticate.ts`) e lê o usuário com `currentUser()`: o hook confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição); `UPDATE` e `DELETE` também: `id` e `user_id` na mesma condição, numa consulta só, sem "ler e depois gravar".
 - A troca de senha incrementa `token_version` (derruba os tokens emitidos com a senha antiga); qualquer nova forma de mudar a senha (ex.: recuperação por email) deve fazer o mesmo.
-- Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`).
+- Nunca desligar o rate limit fora dos testes (`rateLimit: false` só em `test/helpers.ts`; no Rust, `RUST_RATE_LIMIT=off` só no `test/global-setup.ts` e `without_rate_limit()` só em testes).
+- No Rust, toda rota protegida pede `CurrentUser`; nas rotas com limite de `/users/me`, o `RateLimited` vem **depois** do `CurrentUser`, e nas públicas (login, cadastro) **antes** do `JsonBody`. Sem `unwrap()`/`expect()` em caminho de requisição.
