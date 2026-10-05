@@ -211,8 +211,14 @@ impl TestApp {
 
     // Cadastra o usuário padrão e devolve o token dele: o arrange mais comum.
     pub async fn register_and_login(&self) -> String {
-        self.register(default_user()).await;
-        self.login(DEFAULT_EMAIL, DEFAULT_PASSWORD).await
+        self.register_and_login_as(default_user()).await
+    }
+
+    // O mesmo para qualquer usuário ({ username, email, password }).
+    pub async fn register_and_login_as(&self, user: Value) -> String {
+        self.register(user.clone()).await;
+        let email = user["email"].as_str().unwrap();
+        self.login(email, user["password"].as_str().unwrap()).await
     }
 }
 

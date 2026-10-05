@@ -127,7 +127,7 @@ fn confirmation_password<'a>(
 
 // Confere a senha atual do usuário. O hash é lido só aqui: o CurrentUser não o carrega, para ele nunca chegar
 // perto de uma resposta. Conta apagada depois da autenticação → 401; senha errada → 403.
-async fn check_current_password(
+pub async fn check_current_password(
     pool: &PgPool,
     user_id: Uuid,
     password: &str,

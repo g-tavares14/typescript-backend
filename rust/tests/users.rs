@@ -4,7 +4,7 @@ mod common;
 use common::TestApp;
 use meu_backend::{
     http::error::AppError,
-    routes::users::{ProfileChanges, change_password, update_profile},
+    routes::users::{ProfileChanges, change_password, check_current_password, update_profile},
 };
 use uuid::Uuid;
 
@@ -49,4 +49,14 @@ async fn troca_de_senha_com_token_revogado_no_meio_do_caminho_da_401_e_nao_muda_
             .await
             .unwrap();
     assert_eq!((hash.as_str(), version), ("hash-antigo", 1));
+}
+
+#[tokio::test]
+async fn delete_de_conta_apagada_no_meio_do_caminho_da_401() {
+    // A leitura do hash não encontra a conta: é o que acontece quando ela foi apagada depois da autenticação.
+    let app = TestApp::new().await;
+
+    let result = check_current_password(&app.pool, Uuid::new_v4(), "senha123").await;
+
+    assert!(matches!(result, Err(AppError::Unauthorized)));
 }

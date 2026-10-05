@@ -22,7 +22,7 @@ Plano: [plan.md](plan.md). Cada tarefa: código → `cargo fmt --check` + `cargo
 - Aceite: todos os casos não só-TS de `errors`, `register`, `login`, `logout`, `users-me`, `require-auth`.
 - Tamanho: M · Depende de: R2
 
-## R4: Porte — `PATCH`/`DELETE /users/me` e troca de senha
+## R4: Porte — `PATCH`/`DELETE /users/me` e troca de senha ✅
 - Aceite: todos os casos de `users-update-delete` e `users-password` (as corridas já cobertas em `tests/users.rs`).
 - Tamanho: M · Depende de: R3
 
