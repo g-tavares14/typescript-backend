@@ -4,6 +4,8 @@ use argon2::{
     password_hash::{PasswordHasher, PasswordVerifier},
 };
 
+use std::sync::OnceLock;
+
 use crate::error::AppError;
 
 // Os mesmos parâmetros do node-argon2 do TS: 64 MiB, 3 passadas, 4 vias, 32 bytes. O padrão da crate é mais
@@ -35,6 +37,27 @@ pub async fn verify_password(hash: String, password: String) -> Result<bool, App
         hasher()
             .verify_password(password.as_bytes(), hash.as_str())
             .is_ok()
+    })
+    .await
+    .map_err(AppError::internal)
+}
+
+// Hash de uma senha aleatória que ninguém conhece, calculado uma vez (na primeira chamada) e guardado.
+// `OnceLock` é uma variável global que só pode ser preenchida uma vez, com segurança entre threads.
+static DUMMY_HASH: OnceLock<String> = OnceLock::new();
+
+// Usado no login quando o email não existe: gasta o mesmo tempo de uma verificação real, para que o tempo de
+// resposta não revele quais emails estão cadastrados.
+pub async fn simulate_password_verification(password: String) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || {
+        let dummy = DUMMY_HASH.get_or_init(|| {
+            let secret = uuid::Uuid::new_v4().to_string();
+            hasher()
+                .hash_password(secret.as_bytes())
+                .map(|hash| hash.to_string())
+                .unwrap_or_default() // se falhar, um hash vazio: a verificação abaixo só dá false
+        });
+        let _ = hasher().verify_password(password.as_bytes(), dummy.as_str());
     })
     .await
     .map_err(AppError::internal)

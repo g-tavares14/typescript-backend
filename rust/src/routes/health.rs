@@ -1,9 +1,11 @@
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use sqlx::PgPool;
 
-// O Router deste grupo. `Router<PgPool>` = um Router que ainda precisa receber um PgPool como estado
-// (quem entrega é o build_app, com `.with_state(pool)`).
-pub fn router() -> Router<PgPool> {
+use crate::state::AppState;
+
+// O Router deste grupo. `Router<AppState>` = um Router que ainda precisa receber o estado
+// (quem entrega é o build_app, com `.with_state(state)`). O handler pede só o PgPool (ver FromRef em state.rs).
+pub fn router() -> Router<AppState> {
     Router::new().route("/", get(health))
 }
 

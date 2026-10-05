@@ -1,21 +1,19 @@
 // Monta o Router com todas as rotas (o equivalente ao src/app.ts). Separado do main.rs para os testes montarem
 // o mesmo app sem abrir porta.
 use axum::{Router, extract::DefaultBodyLimit, response::IntoResponse};
-use sqlx::PgPool;
 use tower_http::catch_panic::CatchPanicLayer;
 
-use crate::{error::AppError, routes};
+use crate::{error::AppError, routes, state::AppState};
 
 // Limite do corpo: 1 MiB, igual ao padrão do Fastify (o padrão do axum é 2 MB).
 const BODY_LIMIT_BYTES: usize = 1024 * 1024;
 
-pub fn build_app(pool: PgPool) -> Router {
+pub fn build_app(state: AppState) -> Router {
     let router = Router::new()
         .nest("/health", routes::health::router())
         .nest("/auth", routes::auth::router());
-    // O PgPool é barato de clonar (por dentro é um ponteiro com contagem de referências para o mesmo pool),
-    // então cada requisição recebe a sua cópia sem abrir conexões novas.
-    finish(router).with_state(pool)
+    // O estado é clonado para cada requisição (barato: ver src/state.rs).
+    finish(router).with_state(state)
 }
 
 // Acabamento comum a qualquer Router da API: respostas de 404/405, limite do corpo e pânico → 500.

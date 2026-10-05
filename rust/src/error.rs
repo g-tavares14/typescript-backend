@@ -27,6 +27,9 @@ pub enum AppError {
     // 409 com uma mensagem fixa (ex.: email ou username já cadastrado).
     #[error("{0}")]
     Conflict(&'static str),
+    // 401 do login (email ou senha errados): a mesma mensagem para os dois casos.
+    #[error("Email ou senha inválidos")]
+    InvalidCredentials,
     #[error("Rota não encontrada")]
     NotFound,
     #[error("Método não permitido")]
@@ -53,6 +56,7 @@ impl AppError {
         match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,

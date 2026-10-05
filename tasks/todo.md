@@ -60,7 +60,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/{validation,user_fields,password}.rs, rust/src/routes/auth.rs
 - Tamanho: M · Depende de: T3
 
-## Task 5: JWT e `POST /auth/login`
+## Task 5: JWT e `POST /auth/login` ✅
 - Aceite: login com a mesma mensagem para email inexistente e senha errada (com verificação simulada); token HS256
   compatível com o TS nos dois sentidos (teste); hash gerado pelo TS verifica no Rust. `login.test.ts` na paridade.
 - Conceitos: `serde::Serialize`, `jsonwebtoken`, `OnceLock` (hash fictício), `spawn_blocking` (argon2 fora do runtime).

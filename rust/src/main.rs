@@ -2,7 +2,7 @@
 use std::process;
 use std::time::Duration;
 
-use meu_backend::{app::build_app, config::Config};
+use meu_backend::{app::build_app, config::Config, state::AppState};
 use sqlx::postgres::PgPoolOptions;
 
 // `#[tokio::main]` é uma macro: transforma a `main` assíncrona numa `main` normal que liga o runtime do tokio
@@ -45,7 +45,9 @@ async fn main() {
         });
     println!("Servidor Rust ouvindo na porta {}", config.port);
 
-    if let Err(error) = axum::serve(listener, build_app(pool)).await {
+    if let Err(error) =
+        axum::serve(listener, build_app(AppState::new(pool, &config.jwt_secret))).await
+    {
         eprintln!("Servidor encerrado com erro: {error}");
         process::exit(1);
     }

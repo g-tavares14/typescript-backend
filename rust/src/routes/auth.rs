@@ -1,4 +1,4 @@
-// Rotas de /auth (o equivalente ao src/routes/auth.ts). Por enquanto, só o cadastro.
+// Rotas de /auth (o equivalente ao src/routes/auth.ts): cadastro e login.
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
 use serde::Serialize;
 use sqlx::PgPool;
@@ -7,13 +7,17 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     json::JsonBody,
-    password::hash_password,
+    password::{hash_password, simulate_password_verification, verify_password},
+    state::AppState,
+    token::ACCESS_TOKEN_TTL_SECONDS,
     user_fields::{DUPLICATE_USER, check_new_password, parse_email, parse_username},
-    validation::required_string,
+    validation::{REQUIRED, bad_request, required_string},
 };
 
-pub fn router() -> Router<PgPool> {
-    Router::new().route("/register", post(register))
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/register", post(register))
+        .route("/login", post(login))
 }
 
 // Resposta do cadastro. `#[derive(Serialize)]` gera a conversão para JSON (o serde lê os nomes dos campos).
@@ -61,4 +65,52 @@ async fn register(
         // Qualquer outro erro do banco vira 500 (o `From<sqlx::Error>` do AppError).
         Err(error) => Err(error.into()),
     }
+}
+
+// Resposta do login. `rename_all = "camelCase"`: os campos em snake_case do Rust saem em camelCase no JSON.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoginResponse {
+    token: String,
+    token_type: &'static str,
+    expires_in: u64,
+}
+
+async fn login(
+    State(state): State<AppState>,
+    JsonBody(body): JsonBody,
+) -> Result<Json<LoginResponse>, AppError> {
+    // Ordem do schema do TS: email (mesma regra do cadastro) e depois a senha, sem tamanho mínimo (a regra de 8 é do
+    // cadastro: contas antigas com senhas menores continuariam entrando se a regra mudar).
+    let email = parse_email(required_string(&body, "email")?)?;
+    let password = required_string(&body, "password")?;
+    if password.is_empty() {
+        return Err(bad_request(REQUIRED));
+    }
+
+    // `fetch_optional`: Option<linha> (None se o email não existe), em vez de erro.
+    let user = sqlx::query!(
+        "SELECT id, token_version, password_hash FROM users WHERE email = $1",
+        email
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    // `let ... else`: sem usuário, gasta o tempo de uma verificação e responde o mesmo 401 da senha errada.
+    let Some(user) = user else {
+        simulate_password_verification(password.to_string()).await?;
+        return Err(AppError::InvalidCredentials);
+    };
+    if !verify_password(user.password_hash, password.to_string()).await? {
+        return Err(AppError::InvalidCredentials);
+    }
+
+    let token = state
+        .tokens
+        .create_access_token(user.id, user.token_version)?;
+    Ok(Json(LoginResponse {
+        token,
+        token_type: "Bearer",
+        expires_in: ACCESS_TOKEN_TTL_SECONDS,
+    }))
 }

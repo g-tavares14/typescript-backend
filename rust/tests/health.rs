@@ -1,7 +1,7 @@
 // Testes de integração: cada arquivo em tests/ é compilado como um crate separado, que usa o nosso crate
 // (`meu_backend`) como uma biblioteca, sem acesso ao que não for `pub`.
 use axum::{body::Body, http::Request, http::StatusCode};
-use meu_backend::app::build_app;
+use meu_backend::{app::build_app, state::AppState};
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 use tower::ServiceExt; // traz o método `.oneshot()` para o Router
@@ -13,7 +13,10 @@ fn test_database_url() -> String {
 }
 
 async fn get_health(pool: sqlx::PgPool) -> StatusCode {
-    let app = build_app(pool);
+    let app = build_app(AppState::new(
+        pool,
+        "segredo-de-teste-com-pelo-menos-32-caracteres",
+    ));
     // `oneshot` manda uma requisição direto para o Router, sem abrir porta (como o app.inject() do Fastify).
     let request = Request::get("/health").body(Body::empty()).unwrap();
     app.oneshot(request).await.unwrap().status()
