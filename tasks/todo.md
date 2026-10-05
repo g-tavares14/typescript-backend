@@ -30,7 +30,7 @@ Plano: [plan.md](plan.md). Cada tarefa: código → `cargo fmt --check` + `cargo
 - Aceite: todos os casos de `transactions` e `transactions-update-delete`.
 - Tamanho: M · Depende de: R4
 
-## R6: Porte — rate limit
+## R6: Porte — rate limit ✅
 - Aceite: cada caso de `rate-limit.test.ts` tem equivalente em `tests/rate_limit.rs` (completar o que faltar).
 - Tamanho: S · Depende de: R5
 
