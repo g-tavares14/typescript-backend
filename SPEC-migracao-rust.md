@@ -161,6 +161,7 @@ Preenchida durante a migração: cada caso de borda em que o Rust responde difer
 |---|---|---|
 | Corpo com `Content-Type: text/plain` ou sem `Content-Type` | `400` `Corpo da requisição inválido: envie um objeto JSON` | `415` `Tipo de conteúdo não suportado (use application/json)` |
 | Método errado numa rota que existe (ex.: `POST /health`) | `404` `Rota não encontrada` | `405` `Método não permitido` |
+| URL com codificação inválida (ex.: `/%E0%A4%A`) | `400` `URL inválida` | `404` `Rota não encontrada` (o axum compara o caminho sem decodificar) |
 
 O front já manda `application/json` em toda requisição com corpo e só usa os métodos documentados, então nenhum dos
 dois casos aparece no uso normal.

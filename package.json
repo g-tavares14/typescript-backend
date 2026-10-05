@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:parity": "cargo build -q --manifest-path rust/Cargo.toml && API_URL=http://127.0.0.1:3101 vitest run"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.0",

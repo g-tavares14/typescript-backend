@@ -2,6 +2,7 @@ import { DrizzleQueryError } from "drizzle-orm";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { sendError } from "../src/lib/errors.ts";
+import { isParity } from "./parity.ts";
 import { bearer, closeTestApp, createTestApp, expectUnauthorized, loginUser, registerUser, resetDatabase } from "./helpers.ts";
 
 const { app, db } = createTestApp();
@@ -18,16 +19,19 @@ function captureLogs(target: typeof app, calls: LogCall[]) {
   });
 }
 const logged: LogCall[] = [];
-captureLogs(app, logged);
 
 // Rotas de teste que lançam erros 4xx no formato do Fastify, para provar o mapeamento por error.code.
 // Registradas antes do primeiro inject (o app só fecha a lista de rotas no primeiro uso).
-app.get("/teste-fst-sem-mapeamento", async () => {
-  throw Object.assign(new Error("English message from the framework"), { code: "FST_ERR_QUALQUER_COISA", statusCode: 422 });
-});
-app.get("/teste-4xx-sem-fst", async () => {
-  throw Object.assign(new Error("Mensagem própria da rota"), { statusCode: 409 });
-});
+// Só no modo TS: no modo paridade o app é um cliente HTTP e não tem logger nem rotas de teste.
+if (!isParity) {
+  captureLogs(app, logged);
+  app.get("/teste-fst-sem-mapeamento", async () => {
+    throw Object.assign(new Error("English message from the framework"), { code: "FST_ERR_QUALQUER_COISA", statusCode: 422 });
+  });
+  app.get("/teste-4xx-sem-fst", async () => {
+    throw Object.assign(new Error("Mensagem própria da rota"), { statusCode: 409 });
+  });
+}
 
 beforeEach(async () => {
   logged.length = 0;
@@ -40,6 +44,11 @@ afterAll(async () => {
 
 const INVALID_BODY = { error: "Corpo da requisição inválido: envie um objeto JSON" };
 const JSON_HEADERS = { "content-type": "application/json" };
+const UNSUPPORTED = { error: "Tipo de conteúdo não suportado (use application/json)" };
+
+// Diferença documentada (SPEC-migracao-rust.md, "Diferenças para o front"): sem Content-Type ou com text/plain,
+// o Fastify lê o corpo (400) e o axum recusa o tipo (415).
+const RUST_UNSUPPORTED_CASES = new Set(["sem corpo e sem content-type", "text/plain"]);
 
 // Corpos que não são um objeto JSON utilizável. Cada caso vira 400 com a mesma mensagem, em qualquer rota com corpo.
 const invalidBodies: Array<[string, { headers?: Record<string, string>; payload?: string }]> = [
@@ -59,7 +68,7 @@ describe("corpo inválido: 400 em português nas 3 rotas com corpo", () => {
     ["POST /auth/login", "/auth/login"],
     ["POST /transactions (autenticado)", "/transactions"],
   ])("%s", (_nome, url) => {
-    test.each(invalidBodies)("%s", async (_caso, request) => {
+    test.each(invalidBodies)("%s", async (caso, request) => {
       // Arrange: só a rota protegida precisa de token.
       const headers = { ...request.headers } as Record<string, string>;
       if (url === "/transactions") {
@@ -71,12 +80,18 @@ describe("corpo inválido: 400 em português nas 3 rotas com corpo", () => {
       const response = await app.inject({ method: "POST", url, headers, payload: request.payload });
 
       // Assert
+      if (isParity && RUST_UNSUPPORTED_CASES.has(caso)) {
+        expect(response.statusCode).toBe(415);
+        expect(response.json()).toEqual(UNSUPPORTED);
+        return;
+      }
       expect(response.statusCode).toBe(400);
       expect(response.json()).toEqual(INVALID_BODY);
     });
   });
 
-  test("Content-Length que não confere com o corpo também é corpo inválido", async () => {
+  // Só-TS: o fetch não deixa mandar um Content-Length diferente do corpo. Equivalente em Rust: rust/tests/errors.rs.
+  test.skipIf(isParity)("Content-Length que não confere com o corpo também é corpo inválido", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -130,28 +145,41 @@ describe("erros do Fastify mapeados por error.code", () => {
     expect(response.body).not.toContain("nada");
   });
 
-  test("método inexistente numa rota que existe → 404", async () => {
+  test("método inexistente numa rota que existe → 404 (405 no Rust)", async () => {
     const response = await app.inject({ method: "DELETE", url: "/transactions" });
 
+    // Diferença documentada: o axum responde 405 para método errado numa rota que existe.
+    if (isParity) {
+      expect(response.statusCode).toBe(405);
+      expect(response.json()).toEqual({ error: "Método não permitido" });
+      return;
+    }
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "Rota não encontrada" });
   });
 
-  test("URL malformada → 400 sem repetir a URL", async () => {
+  test("URL malformada → 400 sem repetir a URL (404 no Rust)", async () => {
     const response = await app.inject({ method: "GET", url: "/%E0%A4%A" });
 
+    expect(response.body).not.toContain("E0");
+    // Diferença documentada: o axum não decodifica o caminho para escolher a rota, então não acha nenhuma.
+    if (isParity) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "Rota não encontrada" });
+      return;
+    }
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error: "URL inválida" });
   });
 
-  test("outro 4xx do Fastify (code FST_*) sem mapeamento → 'Requisição inválida', mantendo o status", async () => {
+  test.skipIf(isParity)("outro 4xx do Fastify (code FST_*) sem mapeamento → 'Requisição inválida', mantendo o status", async () => {
     const response = await app.inject({ method: "GET", url: "/teste-fst-sem-mapeamento" });
 
     expect(response.statusCode).toBe(422);
     expect(response.json()).toEqual({ error: "Requisição inválida" });
   });
 
-  test("4xx FST_* sem mapeamento loga só o código, nunca a mensagem original nem a URL", async () => {
+  test.skipIf(isParity)("4xx FST_* sem mapeamento loga só o código, nunca a mensagem original nem a URL", async () => {
     await app.inject({ method: "GET", url: "/teste-fst-sem-mapeamento?segredo=1" });
 
     expect(logged).toHaveLength(1);
@@ -159,7 +187,7 @@ describe("erros do Fastify mapeados por error.code", () => {
     expect(logged[0]?.args).toEqual([{ code: "FST_ERR_QUALQUER_COISA" }, "Erro 4xx sem mensagem mapeada"]);
   });
 
-  test("4xx mapeados e 4xx sem FST_* não são logados", async () => {
+  test.skipIf(isParity)("4xx mapeados e 4xx sem FST_* não são logados", async () => {
     await app.inject({ method: "POST", url: "/auth/login", headers: { "content-type": "application/xml" }, payload: "<a/>" });
     await app.inject({ method: "POST", url: "/auth/login", headers: JSON_HEADERS, payload: "{ruim" });
     await app.inject({ method: "GET", url: "/teste-4xx-sem-fst" });
@@ -168,7 +196,7 @@ describe("erros do Fastify mapeados por error.code", () => {
     expect(logged).toEqual([]);
   });
 
-  test("4xx sem code FST_* continua com a própria mensagem", async () => {
+  test.skipIf(isParity)("4xx sem code FST_* continua com a própria mensagem", async () => {
     const response = await app.inject({ method: "GET", url: "/teste-4xx-sem-fst" });
 
     expect(response.statusCode).toBe(409);
@@ -190,7 +218,8 @@ describe("o que não pode mudar", () => {
     }
   });
 
-  describe("429 do rate limit", () => {
+  // Só-TS: rate limit fica de fora da paridade HTTP (contadores no processo); coberto por testes em Rust (T11).
+  describe.skipIf(isParity)("429 do rate limit", () => {
     // App próprio com o rate limit ligado: os contadores ficam na memória do app.
     let limited: ReturnType<typeof createTestApp>;
 
@@ -219,7 +248,11 @@ describe("o que não pode mudar", () => {
 // Erros 5xx gerados pelo próprio Fastify antes de escolher a rota (frameworkErrors) seguem a regra de todo 5xx:
 // mensagem genérica para o cliente e o erro completo no log. O caso real: uma constraint assíncrona que falha
 // (FST_ERR_ASYNC_CONSTRAINT, status 500). App próprio, porque a constraint vale para todas as requisições dele.
-describe("5xx gerado pelo framework (frameworkErrors)", () => {
+// Só-TS: depende de internos do Fastify. Equivalente em Rust: pânico/erro interno em rust/tests/errors.rs.
+describe.skipIf(isParity)("5xx gerado pelo framework (frameworkErrors)", () => {
+  if (isParity) {
+    return; // o vitest ainda executa o corpo de um describe pulado para coletar os testes
+  }
   const constrained = createTestApp();
   // Os tipos do find-my-way não descrevem a forma assíncrona (deriveConstraint com callback `done`), daí o cast.
   const failingStrategy = {
@@ -252,7 +285,8 @@ describe("5xx gerado pelo framework (frameworkErrors)", () => {
 // O log do 5xx que vem do frameworkErrors não dá para capturar pelo app de teste (o Fastify cria esse logger antes de
 // existir qualquer rota, fora da fábrica de child loggers). Por isso a regra de log é conferida direto na função
 // que as duas portas (setErrorHandler e frameworkErrors) usam.
-describe("sendError (a função das duas portas de erro)", () => {
+// Só-TS: testa a função do TS diretamente. Equivalente em Rust: rust/tests/errors.rs.
+describe.skipIf(isParity)("sendError (a função das duas portas de erro)", () => {
   function callSendError(error: Partial<FastifyError>) {
     const log = { error: vi.fn(), warn: vi.fn() };
     const sent: { status?: number; body?: unknown } = {};

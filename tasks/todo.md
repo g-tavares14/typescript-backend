@@ -35,12 +35,14 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/{error,app}.rs, SPEC-migracao-rust.md
 - Tamanho: S · Depende de: T1
 
-## Task 3: Modo `API_URL` nos helpers do vitest
+## Task 3: Modo `API_URL` nos helpers do vitest ✅
 - Aceite:
   - Com `API_URL`, `createTestApp()` devolve um objeto com `inject()` via `fetch` (mesma forma de resposta);
     sem `API_URL`, nada muda (`npm test` verde).
   - Testes só-TS marcados (pulados com `API_URL`), cada um com a nota do teste Rust equivalente.
-  - `npm run test:parity` no `package.json`; `health` e `errors` passam contra o Rust (salvo as diferenças anotadas).
+  - `npm run test:parity` no `package.json` (compila o Rust e o `global-setup` sobe o servidor na porta 3101, no banco
+    `_test`). Dos testes do `errors.test.ts`, passam os que não dependem de rotas (404 e URL malformada); os de corpo
+    passam a partir da T4, quando existir `/auth/register`.
 - Verificar: `npm test`; `API_URL=http://127.0.0.1:3001 npm run test:parity -- test/errors.test.ts`.
 - Arquivos: test/helpers.ts, package.json, testes marcados
 - Tamanho: M · Depende de: T2

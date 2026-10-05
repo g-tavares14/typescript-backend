@@ -3,6 +3,7 @@ import type { LightMyRequestResponse } from "fastify";
 import { expect } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { createDb, type Db } from "../src/db/client.ts";
+import { createHttpApp, isParity } from "./parity.ts";
 
 type TestApp = ReturnType<typeof buildApp>;
 
@@ -10,9 +11,13 @@ type TestApp = ReturnType<typeof buildApp>;
 // Os testes chamam as rotas com app.inject(), sem abrir porta de rede.
 // O rate limit fica DESLIGADO por padrão: todo inject vem do mesmo IP, e os testes fazem mais
 // de 5 logins por minuto. Só o test/rate-limit.test.ts liga (rateLimit: true), com os limites reais.
+// No modo paridade (API_URL), o app é um cliente HTTP do outro servidor (test/parity.ts); o `db` continua sendo o
+// banco de testes, que os dois servidores usam.
 export function createTestApp({ rateLimit = false }: { rateLimit?: boolean } = {}) {
   const db = createDb(process.env.DATABASE_URL ?? "");
-  const app = buildApp(db, { logger: false, rateLimit });
+  const app: TestApp = isParity
+    ? (createHttpApp() as unknown as TestApp)
+    : buildApp(db, { logger: false, rateLimit });
   return { app, db };
 }
 
