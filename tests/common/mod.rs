@@ -20,7 +20,7 @@ use tower::ServiceExt;
 
 // Lê o .env.test (o mesmo banco que o vitest usava) e só aceita banco terminado em _test: os testes apagam tudo.
 pub fn test_env() -> (String, String) {
-    dotenvy::from_filename_override("../.env.test").expect(".env.test não encontrado");
+    dotenvy::from_filename_override(".env.test").expect(".env.test não encontrado");
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL não definida no .env.test");
     let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET não definido no .env.test");
     let name = url.rsplit('/').next().unwrap_or_default();
@@ -75,7 +75,7 @@ async fn prepare_database(url: &str) {
     }
 
     let mut connection = PgConnection::connect(url).await.unwrap();
-    // `migrate!()` embute os arquivos de rust/migrations no binário de teste, na compilação.
+    // `migrate!()` embute os arquivos de migrations/ no binário de teste, na compilação.
     sqlx::migrate!()
         .run(&mut connection)
         .await

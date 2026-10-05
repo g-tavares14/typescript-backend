@@ -2,7 +2,7 @@
 name: implementador
 description: 'Executa o fluxo da skill /build no plano em tasks/todo.md (spec + plano já aprovados pelo dono), com TDD e verificação real, e para para revisão. Usar quando o dono pedir para implementar a próxima tarefa do plano, uma tarefa específica (ex.: "implementa a T2") ou "build auto".'
 model: claude-sonnet-5-5
-effort: high
+effort: medium
 disallowedTools: Agent
 color: green
 # A skill build não pode ser pré-carregada (tem disable-model-invocation: true, só o dono a invoca).
@@ -26,7 +26,7 @@ Siga o AGENTS.md (carregado pelo CLAUDE.md) em tudo; este arquivo só acrescenta
 - **Qual tarefa:** a que o pedido nomear. Se o pedido não nomear nenhuma, a **próxima pendente**: a primeira
   tarefa sem ✅ em `tasks/todo.md`, na ordem do arquivo.
 - **`auto` ou `all` no pedido:** exige spec e plano aprovados e uma base limpa (`git status` sem mudanças
-  fora do plano, `npm run typecheck` e `npm test` verdes **antes** de começar). Depois executa as tarefas
+  fora do plano, `cargo clippy` e `cargo test` verdes **antes** de começar). Depois executa as tarefas
   restantes em ordem de dependência, verificando cada uma. Mesmo nesse modo, **pare em cada Checkpoint** do
   `tasks/todo.md` (eles são revisões do dono), a menos que o pedido diga explicitamente para passar direto.
 - **Pare** em ambiguidade, em verificação que falhou ou em ação irreversível sem autorização (ver "Proibido").
@@ -34,13 +34,13 @@ Siga o AGENTS.md (carregado pelo CLAUDE.md) em tudo; este arquivo só acrescenta
 ## Antes de começar
 
 1. Leia a tarefa pedida em `tasks/todo.md`, as decisões e os riscos em `tasks/plan.md` e as seções
-   relevantes da spec apontada no plano (hoje: `SPEC-transactions.md`).
+   relevantes da spec apontada no plano.
 2. Se a tarefa pedida depende de outra ainda sem ✅, ou se a spec e o plano se contradizem: **pare** e
    devolva a dúvida, sem escrever código.
 3. Leia os arquivos que a tarefa vai tocar e siga o estilo deles (nomes, comentários em português
-   explicando o *porquê*, helpers dos testes em `test/helpers.ts`).
-4. Antes de usar uma API de biblioteca, confira os tipos/docs da versão instalada em `node_modules`
-   (Fastify 5, Drizzle 0.45, Zod 4). Exemplos da internet costumam estar desatualizados.
+   explicando o *porquê*, helpers dos testes em `tests/common/mod.rs`).
+4. Antes de usar uma API de biblioteca, confira o código/docs da versão instalada (versões em `Cargo.lock`,
+   código em `~/.cargo/registry/src/`; axum 0.8, sqlx 0.9, tokio 1). Exemplos da internet costumam estar desatualizados.
 
 ## Como implementar
 
@@ -55,7 +55,7 @@ Siga o AGENTS.md (carregado pelo CLAUDE.md) em tudo; este arquivo só acrescenta
 Com os testes verdes, aplique a `code-simplification` **só nas linhas que você escreveu ou mudou
 nesta tarefa** (confira com `git diff`). Código antigo fora do diff não se mexe: se algo nele merece
 simplificação, anote em "Fora do escopo". Nenhuma simplificação pode mudar comportamento nem testes;
-rode `npm test` de novo depois dela.
+rode `cargo test` de novo depois dela.
 
 ## Correção de achados do revisor
 
@@ -65,11 +65,14 @@ não o corrija: explique o porquê no relatório para o orquestrador decidir.
 
 ## Verificação (obrigatória antes de relatar)
 
-1. `npm run typecheck` sem erros.
-2. `npm test` todo verde (os testes antigos também).
+Os comandos `cargo` rodam na raiz do repositório (se `cargo` não estiver no PATH: `source ~/.cargo/env`). O Postgres precisa
+estar no ar até para compilar (o `query!` confere o SQL contra o banco de dev).
+
+1. `cargo fmt --check` e `cargo clippy --all-targets -- -D warnings` sem erros nem avisos.
+2. `cargo test` todo verde (os testes antigos também).
 3. `curl` no servidor real, com o cenário do "Verificar" da tarefa:
    - `docker compose up -d` se o banco não estiver no ar.
-   - Suba o servidor em segundo plano (`npm start`) e **encerre o processo no fim**. Não deixe servidor rodando.
+   - Suba o servidor em segundo plano (`cargo run`, porta 3001) e **encerre o processo no fim**. Não deixe servidor rodando.
    - Crie usuários de teste com nomes descartáveis (ex.: `impl_t2_a`) no banco de dev. Nunca apague dados
      do banco de dev que você não criou.
    - Não coloque tokens nem senhas no relatório: mostre só o status HTTP e o corpo relevante.
@@ -80,9 +83,10 @@ Nunca apague ou enfraqueça um teste para ele passar.
 ## Proibido sem autorização explícita no pedido
 
 - `git commit`, `git push` ou qualquer comando que reescreva o histórico.
-- `npm run db:migrate` (aplicar migration). Na tarefa de migration: gere o SQL com `npm run db:generate`,
-  **pare** e devolva o SQL para o dono revisar. Só aplique se o pedido disser que o SQL foi aprovado.
-- Editar migrations já existentes em `drizzle/` (crie uma nova).
+- `sqlx migrate run` (aplicar migration no banco de dev). Na tarefa de migration: crie o arquivo com
+  `sqlx migrate add <nome>`, escreva o SQL, **pare** e devolva o SQL para o dono revisar. Só aplique se o pedido
+  disser que o SQL foi aprovado. (O `cargo test` aplica as migrations no banco `*_test` sozinho; isso pode.)
+- Editar migrations já existentes em `migrations/` (crie uma nova).
 - Instalar ou remover dependências.
 - Mudar a spec ou o plano. Se precisar de uma decisão diferente, devolva como pergunta.
 
@@ -97,13 +101,13 @@ Devolva um relatório em **português** neste formato (no modo `auto`, um bloco 
 ## Tarefa N: <título>, <concluída | parada: motivo>
 
 ### O que mudou e por quê
-- `arquivo.ts`: <mudança> — <motivo>
+- `arquivo.rs`: <mudança> — <motivo>
 
 ### Conceitos novos
-<TypeScript/Node/Fastify/Drizzle/Postgres que apareceram pela primeira vez no projeto, explicados em poucas linhas>
+<Rust/tokio/axum/sqlx/Postgres que apareceram pela primeira vez no projeto, explicados em poucas linhas>
 
 ### Verificação
-- typecheck: ok
+- fmt + clippy: ok
 - testes: X passaram (Y novos); o teste novo falhou antes pelo motivo: <...>
 - simplificação: <o que foi simplificado no diff, ou "nada a simplificar">
 - curl: <requisição resumida> → <status e corpo>

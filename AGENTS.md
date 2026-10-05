@@ -30,7 +30,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 
 ## Contexto do projeto
 
-- **Etapa atual: só Rust.** A API foi reescrita em Rust (`SPEC-migracao-rust.md`) e o TypeScript saiu do repositório depois que toda a suíte de testes foi portada para `rust/tests/`. O último commit com o TS é o `53590d7`. Todas as etapas estão concluídas (roteiros abaixo, como histórico).
+- **Etapa atual: só Rust.** A API foi reescrita em Rust (`SPEC-migracao-rust.md`) e o TypeScript saiu do repositório depois que toda a suíte de testes foi portada para `tests/`. O último commit com o TS é o `53590d7`. Todas as etapas estão concluídas (roteiros abaixo, como histórico).
 - Histórico: o projeto começou em Rust (tag `versao-rust`), foi migrado para TypeScript e depois reescrito em Rust do zero, para estudo do dono. Comentários do tipo "o equivalente ao `src/...ts`" no código apontam para o TS nesse histórico.
 
 ### Stack
@@ -41,7 +41,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 | Runtime assíncrono | `tokio` |
 | Framework web | `axum` 0.8 (+ `tower-http`: limite de corpo e pânico → 500) |
 | Banco de dados | PostgreSQL 17 via Docker Compose; `sqlx` 0.9 (`query!`/`query_as!` conferidas contra o banco na compilação) |
-| Migrations | `sqlx migrate` (`sqlx-cli`), arquivos em `rust/migrations/` |
+| Migrations | `sqlx migrate` (`sqlx-cli`), arquivos em `migrations/` |
 | JSON | `serde` / `serde_json`; validação dos corpos escrita à mão |
 | Hash de senha | `argon2` (argon2id, 64 MiB, `t=3`, `p=4`) |
 | Token de login | `jsonwebtoken` (HS256, `leeway = 0`, expira em 1 hora) |
@@ -52,7 +52,7 @@ O agente **implementa** as tarefas e o dono **revisa**. Por isso, cada entrega d
 ### Estrutura
 
 ```
-rust/
+meu-backend/
 ├── Cargo.toml       # dependências; argon2/blake2 otimizados também no build de dev
 ├── migrations/      # SQL das migrations (0000..0004 vieram do drizzle-kit); nunca editar uma já aplicada
 ├── src/
@@ -72,33 +72,33 @@ rust/
 │   ├── models/{user,transaction}.rs  # PublicUser e PublicTransaction (o que sai nas respostas)
 │   ├── routes.rs
 │   └── routes/{health,auth,users,transactions}.rs  # handlers e SQL
-└── tests/
-    ├── common/mod.rs  # cria e migra o banco *_test, TestApp (requisições encadeadas), atalhos de cadastro/login
-    ├── register.rs, login.rs, logout.rs, users_me.rs
-    ├── users_update_delete.rs, users_password.rs, users.rs (corridas)
-    ├── transactions.rs, transactions_update_delete.rs
-    ├── errors.rs    # erros do framework (inclusive Content-Length errado por TCP de verdade)
-    ├── auth.rs      # 401 antes do corpo; banco fora do ar na autenticação
-    ├── rate_limit.rs  # único com o rate limit ligado, com os limites reais
-    └── health.rs
-.claude/
-├── agents/          # implementador e revisor (Sonnet 5.5, esforço alto)
-├── skills/          # skills do projeto, copiadas do catálogo agent-skills e adaptáveis aqui
-├── references/      # checklists citados pelas skills
-├── catalog.md       # skills do catálogo ainda não instaladas (gerado; não editar)
-└── agent-skills.json  # de qual versão/commit do catálogo veio cada skill (gerado)
+├── tests/
+│   ├── common/mod.rs  # cria e migra o banco *_test, TestApp (requisições encadeadas), atalhos de cadastro/login
+│   ├── register.rs, login.rs, logout.rs, users_me.rs
+│   ├── users_update_delete.rs, users_password.rs, users.rs (corridas)
+│   ├── transactions.rs, transactions_update_delete.rs
+│   ├── errors.rs    # erros do framework (inclusive Content-Length errado por TCP de verdade)
+│   ├── auth.rs      # 401 antes do corpo; banco fora do ar na autenticação
+│   ├── rate_limit.rs  # único com o rate limit ligado, com os limites reais
+│   └── health.rs
+└── .claude/
+    ├── agents/          # implementador e revisor (Sonnet 5.5, esforço médio)
+    ├── skills/          # skills do projeto, copiadas do catálogo agent-skills e adaptáveis aqui
+    ├── references/      # checklists citados pelas skills
+    ├── catalog.md       # skills do catálogo ainda não instaladas (gerado; não editar)
+    └── agent-skills.json  # de qual versão/commit do catálogo veio cada skill (gerado)
 ```
 
 ### Comandos úteis
 
 ```bash
-docker compose up -d                          # sobe o Postgres
-cd rust && cargo run                          # servidor na porta 3001 (lê o ../.env)
-cd rust && cargo test                         # testes (cria e migra o banco *_test sozinho)
-cd rust && cargo clippy --all-targets -- -D warnings && cargo fmt --check
-cd rust && sqlx migrate add <nome>            # cria uma migration nova em rust/migrations
-cd rust && sqlx migrate run                   # aplica as migrations no banco do DATABASE_URL (../.env)
-cd rust && sqlx migrate info                  # o que já foi aplicado
+docker compose up -d          # sobe o Postgres
+cargo run                     # servidor na porta 3001 (lê o .env)
+cargo test                    # testes (cria e migra o banco *_test sozinho)
+cargo clippy --all-targets -- -D warnings && cargo fmt --check
+sqlx migrate add <nome>       # cria uma migration nova em migrations/
+sqlx migrate run              # aplica as migrations no banco do DATABASE_URL (.env)
+sqlx migrate info             # o que já foi aplicado
 ```
 
 O `query!` do `sqlx` confere o SQL contra o banco de dev na compilação: o Postgres precisa estar de pé (e migrado) para compilar.
@@ -112,14 +112,14 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - Cada grupo de rotas expõe `router() -> Router<AppState>`; o `app.rs` monta com `nest`.
 - Regras de campo em `validation/`, devolvendo `Result<T, AppError>`; handlers só leem o corpo, chamam as regras e fazem o SQL.
 - SQL com `query!`/`query_as!` (verificado na compilação). SQL montado em tempo de execução só nos testes, com `AssertSqlSafe` e o valor conferido antes.
-- Testes de integração em `rust/tests/`, um arquivo por recurso, com `mod common;` e `TestApp`.
+- Testes de integração em `tests/`, um arquivo por recurso, com `mod common;` e `TestApp`.
 
 ## Decisões registradas
 
 - **Rust, para estudo** (`SPEC-migracao-rust.md`): o projeto passou por TypeScript por relevância de mercado; voltou a Rust porque o dono quer aprender a linguagem. O agente escreve e o dono lê.
 - **Skills e agentes no próprio repo** (`.claude/`), não globais: o catálogo é o repositório `g-tavares14/agent-skills`, instalado pelo `/agent-skills:setup-project` (núcleo fixo, com `security-and-hardening`). A `spec` e a `plan` sugerem skills do `.claude/catalog.md`; só entram as aprovadas pelo dono (`/agent-skills:setup-project add <skill>`). Skills só deste projeto são criadas direto em `.claude/skills/`. Atalhos do fluxo: `/spec`, `/plan`, `/build`, `/verify`, `/review`.
 - **axum + sqlx**: axum pelos extractors (autenticação, rate limit e corpo viram parâmetros do handler, na ordem certa); sqlx pelo SQL escrito à mão e conferido contra o banco na compilação, sem ORM.
-- **Migrations pelo `sqlx migrate`**, SQL escrito à mão em `rust/migrations/`. As 5 primeiras vieram do `drizzle-kit`; no banco de dev, a tabela `_sqlx_migrations` foi copiada de um banco migrado do zero, depois de conferir que o schema era idêntico. O schema `drizzle` que sobrou no banco de dev não é usado.
+- **Migrations pelo `sqlx migrate`**, SQL escrito à mão em `migrations/`. As 5 primeiras vieram do `drizzle-kit`; no banco de dev, a tabela `_sqlx_migrations` foi copiada de um banco migrado do zero, depois de conferir que o schema era idêntico. O schema `drizzle` que sobrou no banco de dev não é usado.
 - **`409` mantido no cadastro** (email ou username em uso): o usuário precisa saber o motivo; aceitamos revelar quais emails têm conta, e o rate limit torna a varredura em massa lenta.
 - **`role` fora do JWT**: a role pode mudar no banco e o token ficaria desatualizado; quem precisa dela lê `GET /users/me`.
 - **`/users/me` no lugar de `/auth/me`**: o usuário atual é um recurso, e `/auth` fica para as ações de sessão (cadastro, login, logout). Isso também deixa espaço para `PATCH /users/me` e `PUT /users/me/password`.
@@ -146,7 +146,7 @@ A URL do banco (`DATABASE_URL`) e o segredo do JWT (`JWT_SECRET`) ficam em `.env
 - **Trocar o email não pede senha** (decisão do dono). **Risco**: quando existir recuperação de senha por email, trocar o email com um token vazado vira jeito de tomar a conta; nessa etapa, voltar a exigir a senha (ou confirmar pelo email antigo).
 - **`DELETE /users/me` definitivo, com `{ "password" }` no corpo**: apaga o usuário e, pelo `CASCADE`, os registros financeiros dele. Senha errada → `403` `Senha incorreta` (não `401`, para o front não tratar como sessão expirada e deslogar); o hash é lido só nessa rota e na troca de senha (o `CurrentUser` não carrega o hash).
 - **`PUT /users/me/password`** com `{ currentPassword, newPassword }` (a nova com a regra do cadastro; igual à atual é aceita). Senha atual errada → `403` `Senha incorreta`. Grava o hash e incrementa `token_version` numa consulta só, com `WHERE id AND token_version` do token (logout no meio → `0` linhas → `401`, nada muda), e responde `200` com um **token novo** no formato do login: os outros dispositivos caem, o atual continua logado. A versão do token fica em `CurrentUser.token_version`, fora do `PublicUser`, para nunca sair numa resposta.
-- **Testes portados do vitest** (`rust/tests/`): um arquivo por arquivo do vitest, com os mesmos casos. Os casos em tabela (`test.each`) viraram um teste com um laço, com o nome do caso em cada asserção. Os testes de internos do Fastify não foram portados; o comportamento que eles protegiam (500 genérico, pânico, banco fora do ar) tem teste próprio.
+- **Testes portados do vitest** (`tests/`): um arquivo por arquivo do vitest, com os mesmos casos. Os casos em tabela (`test.each`) viraram um teste com um laço, com o nome do caso em cada asserção. Os testes de internos do Fastify não foram portados; o comportamento que eles protegiam (500 genérico, pânico, banco fora do ar) tem teste próprio.
 - **Testes no mesmo banco `_test`, em paralelo por arquivo**: cada `TestApp` segura uma trava (`Mutex` do tokio) do começo ao fim do teste e limpa as tabelas ao começar.
 - **Rate limit como extractor (`governor`), não como layer (`tower_governor`)**: a layer rodaria antes do `CurrentUser` e contaria requisições sem token. Desligável só no código (`without_rate_limit()`), nunca por variável de ambiente.
 - **Rate limit em memória, por IP** (login 5/min, cadastro 3/min, `DELETE /users/me` 5/min, `PATCH /users/me` 10/min, `PUT /users/me/password` 5/min; conta toda requisição autenticada, inclusive os `400`): protege contra força bruta e contra o consumo de memória do argon2 (64 MiB por hash).
@@ -245,6 +245,6 @@ Plano em `tasks/plan.md`, tarefas em `tasks/todo.md`.
 - Não expor detalhes internos (erro do banco, stack trace) na resposta HTTP.
 - Toda rota protegida pede `CurrentUser`, que confere a assinatura, a expiração e a `token_version` do token. Toda consulta a `transactions` filtra por `user_id` do token (nunca da requisição); `UPDATE` e `DELETE` também: `id` e `user_id` na mesma condição, numa consulta só, sem "ler e depois gravar".
 - A troca de senha incrementa `token_version` (derruba os tokens emitidos com a senha antiga); qualquer nova forma de mudar a senha (ex.: recuperação por email) deve fazer o mesmo.
-- Nunca desligar o rate limit fora dos testes (`without_rate_limit()` só em `rust/tests/`).
+- Nunca desligar o rate limit fora dos testes (`without_rate_limit()` só em `tests/`).
 - Nas rotas com limite de `/users/me`, o `RateLimited` vem **depois** do `CurrentUser`, e nas públicas (login, cadastro) **antes** do `JsonBody`.
 - Sem `unwrap()`/`expect()` em caminho de requisição; argon2 sempre em `spawn_blocking`.

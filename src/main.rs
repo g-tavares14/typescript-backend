@@ -9,7 +9,7 @@ use sqlx::postgres::PgPoolOptions;
 // (o "event loop" que, no Node, já vem pronto) e roda a função dentro dele.
 #[tokio::main]
 async fn main() {
-    // Procura um .env no diretório atual e nos de cima (rodando de rust/, acha o ../.env). Sem .env, segue com
+    // Procura um .env no diretório atual e nos de cima (na raiz do repositório, acha o .env). Sem .env, segue com
     // o ambiente. O `.ok()` descarta o erro de propósito: o .env é opcional, a validação é do Config.
     dotenvy::dotenv().ok();
 
