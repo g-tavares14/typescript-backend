@@ -8,7 +8,10 @@ use axum::{
     routing::{get, post},
 };
 use http_body_util::BodyExt; // `.collect()` para ler o corpo inteiro da resposta
-use meu_backend::{app::finish, error::AppError, json::JsonBody};
+use meu_backend::{
+    app::finish,
+    http::{error::AppError, json::JsonBody},
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 

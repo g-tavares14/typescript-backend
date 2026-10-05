@@ -9,102 +9,25 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Map, Value};
 use sqlx::PgPool;
-use time::{Date, OffsetDateTime};
+use time::Date;
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
-    dates::parse_iso_date,
-    error::AppError,
-    json::JsonBody,
+    http::auth::CurrentUser,
+    http::error::AppError,
+    http::json::JsonBody,
+    models::transaction::PublicTransaction,
     state::AppState,
-    validation::{REQUIRED, bad_request, js_length},
+    validation::transaction_fields::{
+        parse_amount, parse_date, parse_date_text, parse_description, parse_type,
+    },
+    validation::{REQUIRED, bad_request},
 };
-
-const TYPE_ERROR: &str = "O tipo deve ser income ou expense";
-const AMOUNT_ERROR: &str = "O valor deve ser um número inteiro de centavos maior que zero";
-const DESCRIPTION_ERROR: &str = "A descrição deve ter entre 1 e 200 caracteres";
-const DATE_ERROR: &str = "Data inválida (use AAAA-MM-DD)";
-const MAX_AMOUNT_CENTS: i64 = 100_000_000_000; // R$ 1 bilhão
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/{id}", patch(update).delete(remove))
-}
-
-// Um registro como a API mostra (nunca o user_id). Os nomes do banco viram os da API.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublicTransaction {
-    pub id: Uuid,
-    #[serde(rename = "type")]
-    // `type` é palavra reservada em Rust: o campo se chama kind e sai como "type"
-    pub kind: String,
-    pub amount: i64,
-    pub description: String,
-    #[serde(serialize_with = "crate::dates::serialize_date")]
-    pub date: Date,
-    #[serde(serialize_with = "crate::dates::serialize_js_iso")]
-    pub created_at: OffsetDateTime,
-    #[serde(serialize_with = "crate::dates::serialize_js_iso")]
-    pub updated_at: OffsetDateTime,
-}
-
-// ---- Regras dos campos (as mesmas no POST e no PATCH) ----
-// Convenção do projeto: tipo JSON errado (inclusive null) → REQUIRED; tipo certo com valor fora da regra →
-// a mensagem do campo. Cada função recebe o valor do campo já tirado do corpo.
-
-pub fn parse_type(value: &Value) -> Result<String, AppError> {
-    match value {
-        // `as_str()` empresta o texto da String para comparar com os literais.
-        Value::String(text) => match text.as_str() {
-            "income" | "expense" => Ok(text.clone()),
-            _ => Err(bad_request(TYPE_ERROR)),
-        },
-        _ => Err(bad_request(REQUIRED)),
-    }
-}
-
-// Centavos inteiros, de 1 a R$ 1 bilhão. "1990" (string) é tipo errado; 19.9 é valor inválido.
-// O JSON não distingue 1000 de 1000.0 (no JavaScript são o mesmo número), então 1000.0 é aceito como 1000.
-pub fn parse_amount(value: &Value) -> Result<i64, AppError> {
-    let Value::Number(number) = value else {
-        return Err(bad_request(REQUIRED));
-    };
-    let cents = match number.as_i64() {
-        Some(integer) => integer,
-        None => {
-            let float = number.as_f64().unwrap_or(f64::NAN);
-            // `fract()` é a parte depois da vírgula: 19.9 → 0.9. Só aceita número inteiro dentro do teto.
-            if float.fract() != 0.0 || float.abs() > MAX_AMOUNT_CENTS as f64 {
-                return Err(bad_request(AMOUNT_ERROR));
-            }
-            float as i64
-        }
-    };
-    if !(1..=MAX_AMOUNT_CENTS).contains(&cents) {
-        return Err(bad_request(AMOUNT_ERROR));
-    }
-    Ok(cents)
-}
-
-pub fn parse_description(value: &Value) -> Result<String, AppError> {
-    let Value::String(text) = value else {
-        return Err(bad_request(REQUIRED));
-    };
-    let description = text.trim();
-    if !(1..=200).contains(&js_length(description)) {
-        return Err(bad_request(DESCRIPTION_ERROR));
-    }
-    Ok(description.to_string())
-}
-
-pub fn parse_date(value: &Value) -> Result<Date, AppError> {
-    let Value::String(text) = value else {
-        return Err(bad_request(REQUIRED));
-    };
-    parse_iso_date(text).ok_or_else(|| bad_request(DATE_ERROR))
 }
 
 // Campo obrigatório: ausente → REQUIRED; presente → a regra do campo.
@@ -175,9 +98,7 @@ fn query_date(pairs: &[(String, String)], name: &str) -> Result<Option<Date>, Ap
         .collect();
     match values.as_slice() {
         [] => Ok(None),
-        [single] => parse_iso_date(single)
-            .map(Some)
-            .ok_or_else(|| bad_request(DATE_ERROR)),
+        [single] => parse_date_text(single).map(Some),
         _ => Err(bad_request(REQUIRED)),
     }
 }

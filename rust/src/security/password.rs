@@ -6,7 +6,7 @@ use argon2::{
 
 use std::sync::OnceLock;
 
-use crate::error::AppError;
+use crate::http::error::AppError;
 
 // Os mesmos parâmetros do node-argon2 do TS: 64 MiB, 3 passadas, 4 vias, 32 bytes. O padrão da crate é mais
 // leve (19 MiB, 2 passadas, 1 via); com os mesmos valores, uma senha custa igual nos dois servidores.

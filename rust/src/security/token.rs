@@ -4,7 +4,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, deco
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::AppError;
+use crate::http::error::AppError;
 
 pub const ACCESS_TOKEN_TTL_SECONDS: u64 = 60 * 60; // 1 hora
 

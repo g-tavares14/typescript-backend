@@ -2,24 +2,8 @@
 // No axum não há hook: a rota protegida pede um `CurrentUser` como parâmetro, e este extractor roda antes do
 // handler. Se o token não valer, o handler nem roda e a resposta é o 401 padrão.
 use axum::{extract::FromRequestParts, http::header::AUTHORIZATION, http::request::Parts};
-use serde::Serialize;
-use time::OffsetDateTime;
-use uuid::Uuid;
 
-use crate::{error::AppError, state::AppState};
-
-// Colunas do usuário que podem sair numa resposta (sem password_hash nem token_version). O GET /users/me devolve
-// exatamente isto.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublicUser {
-    pub id: Uuid,
-    pub username: String,
-    pub email: String,
-    pub role: String,
-    #[serde(serialize_with = "crate::dates::serialize_js_iso")]
-    pub created_at: OffsetDateTime,
-}
+use crate::{http::error::AppError, models::user::PublicUser, state::AppState};
 
 // O usuário dono do token e a versão do token (já conferida com o banco). A versão fica fora do PublicUser para
 // nunca sair numa resposta; serve para gravações que precisam saber que o token ainda vale (troca de senha).

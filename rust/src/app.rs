@@ -3,7 +3,7 @@
 use axum::{Router, extract::DefaultBodyLimit, response::IntoResponse};
 use tower_http::catch_panic::CatchPanicLayer;
 
-use crate::{error::AppError, routes, state::AppState};
+use crate::{http::error::AppError, routes, state::AppState};
 
 // Limite do corpo: 1 MiB, igual ao padrão do Fastify (o padrão do axum é 2 MB).
 const BODY_LIMIT_BYTES: usize = 1024 * 1024;

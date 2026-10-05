@@ -5,14 +5,14 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    auth::CurrentUser,
-    error::AppError,
-    json::JsonBody,
-    password::{hash_password, simulate_password_verification, verify_password},
-    rate_limit::{Login, RateLimited, Register},
+    http::auth::CurrentUser,
+    http::error::AppError,
+    http::json::JsonBody,
+    http::rate_limit::{Login, RateLimited, Register},
+    security::password::{hash_password, simulate_password_verification, verify_password},
+    security::token::ACCESS_TOKEN_TTL_SECONDS,
     state::AppState,
-    token::ACCESS_TOKEN_TTL_SECONDS,
-    user_fields::{DUPLICATE_USER, check_new_password, parse_email, parse_username},
+    validation::user_fields::{DUPLICATE_USER, check_new_password, parse_email, parse_username},
     validation::{REQUIRED, bad_request, required_string},
 };
 

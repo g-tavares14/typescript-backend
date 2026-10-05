@@ -8,7 +8,7 @@ use axum::{
 };
 use serde_json::{Map, Value};
 
-use crate::error::{AppError, INVALID_BODY};
+use crate::http::error::{AppError, INVALID_BODY};
 
 // Struct "tupla" com um campo só (newtype): dá um nome e um comportamento próprio a um Map.
 pub struct JsonBody(pub Map<String, Value>);

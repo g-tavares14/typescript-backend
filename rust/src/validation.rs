@@ -1,7 +1,7 @@
 // Peças comuns da validação manual dos corpos (o papel do Zod no TS).
 use serde_json::{Map, Value};
 
-use crate::error::AppError;
+use crate::http::error::AppError;
 
 // Campo ausente ou com tipo JSON errado (inclusive `null`).
 pub const REQUIRED: &str = "Campo obrigatório ausente ou inválido";
@@ -25,3 +25,8 @@ pub fn required_string<'a>(body: &'a Map<String, Value>, field: &str) -> Result<
 pub fn js_length(text: &str) -> usize {
     text.encode_utf16().count()
 }
+
+// Regras de cada campo, separadas por recurso, e a serialização de datas.
+pub mod dates;
+pub mod transaction_fields;
+pub mod user_fields;

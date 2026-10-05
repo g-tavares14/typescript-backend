@@ -16,7 +16,7 @@ use governor::{
     clock::{Clock, DefaultClock},
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{http::error::AppError, state::AppState};
 
 type Limiter = DefaultKeyedRateLimiter<IpAddr>;
 

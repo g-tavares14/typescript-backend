@@ -72,12 +72,17 @@ rust/
 │   ├── app.rs       # build_app(state) e finish(): 404/405, corpo de 1 MiB, pânico → 500
 │   ├── state.rs     # AppState { pool, tokens, limits } + FromRef para PgPool
 │   ├── config.rs    # DATABASE_URL, JWT_SECRET (fail fast), RUST_PORT (padrão 3001)
-│   ├── error.rs     # AppError -> { "error": ... } (status, WWW-Authenticate, Retry-After, 5xx genérico + log)
-│   ├── json.rs      # JsonBody: só objeto JSON; rejeições do axum -> AppError
-│   ├── auth.rs      # extractor CurrentUser (Bearer -> token -> token_version no banco) e PublicUser
-│   ├── rate_limit.rs  # extractor RateLimited<Rota>, um contador por rota
-│   ├── token.rs, password.rs, validation.rs, user_fields.rs, dates.rs
-│   └── routes/{health,auth,users,transactions}.rs
+│   ├── http/        # ligação com o axum (http.rs declara os submódulos)
+│   │   ├── error.rs     # AppError -> { "error": ... } (status, WWW-Authenticate, Retry-After, 5xx genérico + log)
+│   │   ├── json.rs      # JsonBody: só objeto JSON; rejeições do axum -> AppError
+│   │   ├── auth.rs      # extractor CurrentUser (Bearer -> token -> token_version no banco)
+│   │   └── rate_limit.rs  # extractor RateLimited<Rota>, um contador por rota
+│   ├── security/{password,token}.rs  # argon2 e JWT
+│   ├── validation.rs  # bad_request, REQUIRED, required_string, js_length
+│   ├── validation/{user_fields,transaction_fields,dates}.rs  # regras por recurso e datas
+│   ├── models/{user,transaction}.rs  # PublicUser e PublicTransaction (o que sai nas respostas)
+│   ├── routes.rs
+│   └── routes/{health,auth,users,transactions}.rs  # handlers e SQL
 └── tests/           # integração com Router::oneshot: erros, auth, users (corridas), rate limit, health
 test/parity.ts       # modo paridade: com API_URL, o app dos testes vira um cliente HTTP do servidor Rust
 ```

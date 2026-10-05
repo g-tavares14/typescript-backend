@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::extract::FromRef;
 use sqlx::PgPool;
 
-use crate::{rate_limit::RateLimits, token::TokenKeys};
+use crate::{http::rate_limit::RateLimits, security::token::TokenKeys};
 
 // `Clone` porque o axum entrega uma cópia do estado a cada requisição. O PgPool já é barato de clonar; as chaves
 // ficam num `Arc` (ponteiro com contagem de referências): clonar o Arc só soma 1 na contagem, sem copiar as chaves.

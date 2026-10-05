@@ -1,6 +1,6 @@
 // /users/me em casos que a paridade HTTP não alcança (equivalentes aos testes só-TS de users-update-delete.test.ts).
 use meu_backend::{
-    error::AppError,
+    http::error::AppError,
     routes::users::{ProfileChanges, change_password, update_profile},
 };
 use sqlx::postgres::PgPoolOptions;

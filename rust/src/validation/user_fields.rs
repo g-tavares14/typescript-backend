@@ -1,6 +1,6 @@
 // Regras de username, email e senha (o equivalente ao src/lib/user-fields.ts), com as mesmas mensagens.
 // Cada função recebe o texto já lido do corpo e devolve o valor normalizado, ou o AppError da regra.
-use crate::error::AppError;
+use crate::http::error::AppError;
 use crate::validation::{bad_request, js_length};
 
 // Resposta do 409 quando username ou email já pertencem a outra conta.
