@@ -1,97 +1,61 @@
-# Tarefas: Editar e excluir a própria conta
+# Tarefas: Endpoints restantes (troca de senha)
 
-Plano: [plan.md](plan.md). Spec: [SPEC-users-update-delete.md](../SPEC-users-update-delete.md).
+Plano: [plan.md](plan.md). Spec: [SPEC-endpoints-restantes.md](../SPEC-endpoints-restantes.md).
 Cada tarefa: teste falhando → código → `npm run typecheck` + `npm test` + `curl` → commit (com o pedido do dono).
 
-## Task 1: Regras de username/email e `isUniqueViolation` num lugar compartilhado ✅
+## Task 1: `passwordSchema` compartilhado ✅
 - Aceite:
-  - `src/lib/user-fields.ts` exporta `usernameSchema` e `emailSchema`, com as mesmas regras, ordem e mensagens de hoje.
-  - `src/lib/db-errors.ts` exporta `isUniqueViolation`; ele sai do `auth.ts`.
-  - `registerSchema` e `loginSchema` usam os schemas compartilhados; nenhum comportamento muda.
-  - `register.test.ts` e `login.test.ts` verdes **sem nenhuma alteração**.
-- Verificar: `npm run typecheck`; `npm test`; `curl` cadastro com `"  Joao "` (vira `joao`) e cadastro duplicado (`409`).
-- Arquivos: src/routes/auth.ts, src/lib/user-fields.ts (novo), src/lib/db-errors.ts (novo)
-- Tamanho: S · Depende de: nada
+  - `src/lib/user-fields.ts` exporta `passwordSchema` (mínimo 8, mesmas mensagens de hoje).
+  - O `registerSchema` usa o `passwordSchema`; nenhum comportamento muda.
+  - `register.test.ts` verde **sem nenhuma alteração**.
+- Verificar: `npm run typecheck`; `npm test`; `curl` cadastro com senha de 7 caracteres (`400` com a mensagem de hoje).
+- Arquivos: src/lib/user-fields.ts, src/routes/auth.ts
+- Tamanho: XS · Depende de: nada
 
-## Task 2: `PATCH /users/me` (caminho feliz, 409 e 401) ✅
+## Task 2: `PUT /users/me/password` (caminho feliz, 403, 401 e corrida)
 - Aceite:
-  - Só `username`, só `email` e os dois → `200` no formato do `GET /users/me`, com os valores normalizados
-    (`"  Joao_Silva "` → `joao_silva`, email em minúsculas); o `GET /users/me` mostra o novo; o mesmo token continua valendo.
-  - Depois de trocar o email: login com o novo → `200`, com o antigo → `401` `Email ou senha inválidos`.
-  - Enviar o próprio valor atual → `200`.
-  - Username ou email de outra conta → `409` `Email ou username já cadastrado`, e nada muda (nem o outro campo enviado junto).
-  - Sem token e token revogado por logout → `401` padrão (`expectUnauthorized`).
-  - Conta apagada entre o `requireAuth` e o `UPDATE` → `401` padrão (teste com hook `preHandler`; ver Riscos no plano).
-  - `unauthorized()` e `publicUserColumns` exportados de `authenticate.ts`; `requireAuth` sem mudança de comportamento.
-  - Uma consulta só: `UPDATE ... WHERE id = <token> RETURNING publicUserColumns`.
-- Verificar: `test/users-update-delete.test.ts` (novo); `npm run typecheck`; `npm test`;
-  `curl` login → `PATCH` só `username` → `GET /users/me` → `PATCH` com o email de outro usuário (409).
-- Arquivos: src/routes/users.ts, src/lib/authenticate.ts, test/users-update-delete.test.ts
+  - Senha atual certa → `200` `{ token, tokenType: "Bearer", expiresIn: 3600 }`; o token novo funciona no
+    `GET /users/me`; o token antigo dá `401` padrão; login com a senha nova `200`, com a antiga `401`
+    `Email ou senha inválidos`.
+  - Tokens de outro "dispositivo" (outro login antes da troca) também dão `401`.
+  - Senha atual errada → `403` `Senha incorreta`; a senha e os tokens continuam valendo.
+  - Sem token e token revogado → `401` padrão (`expectUnauthorized`).
+  - Corrida (`token_version` incrementado entre o `requireAuth` e o `UPDATE`) → `401` padrão; nada muda.
+  - Uma consulta de gravação: `UPDATE ... SET password_hash, token_version + 1 WHERE id AND token_version RETURNING`.
+  - O `requireAuth` passa a guardar a versão do token no request, sem mudar o formato do `GET /users/me`.
+- Verificar: `test/users-password.test.ts` (novo); `npm run typecheck`; `npm test`;
+  `curl` login → `PUT` → `GET /users/me` com o token antigo (`401`) e com o novo (`200`).
+- Arquivos: src/routes/users.ts, src/lib/authenticate.ts, test/users-password.test.ts
 - Tamanho: M · Depende de: T1
 
-## Task 3: `PATCH /users/me` (validação) ✅
+## Checkpoint A (T1–T2)
+- [ ] `npm run typecheck` e `npm test` verdes
+- [ ] Revisão do dono antes de seguir
+
+## Task 3: Validação e rate limit
 - Aceite:
-  - `{}` e corpo só com campos desconhecidos (ex.: `{ "foo": 1 }`, `{ "password": "x" }`) → `400` `Envie ao menos um campo para alterar`.
-  - `null` e tipo errado (`"email": null`, `"username": 123`) → `400` `Campo obrigatório ausente ou inválido`.
-  - Valores fora da regra do cadastro: username curto, longo, com acento, com espaço no meio → mensagens do username;
-    email inválido → `Email inválido`.
-  - `null`, `[]` e texto na raiz → `INVALID_BODY`.
-  - `role: "admin"` junto com `username` → `200`, e a `role` continua `user` no banco; `password` no corpo é ignorada
-    (a senha antiga continua entrando).
-  - `PATCH` recusado não altera nada (conferido pelo `GET /users/me`).
-- Verificar: `test/users-update-delete.test.ts`; `npm run typecheck`; `npm test`;
-  `curl` `PATCH` com `{}` e com `{"username":"ab"}`.
-- Arquivos: src/routes/users.ts, test/users-update-delete.test.ts
+  - `currentPassword` ausente, vazia, `null` ou tipo errado → `400` `Campo obrigatório ausente ou inválido`.
+  - `newPassword` ausente/`null`/tipo errado → `Campo obrigatório ausente ou inválido`; com menos de 8 → `A senha
+    deve ter no mínimo 8 caracteres`.
+  - Os dois inválidos → mensagem do `currentPassword` (ordem da spec); erro de validação não verifica a senha.
+  - `null`, `[]` e texto na raiz → `INVALID_BODY`; campos a mais ignorados.
+  - Sem token com corpo inválido → `401` (antes do `400`).
+  - 5 tentativas por minuto por IP; a 6ª → `429` com `Retry-After`; sem token não consome o limite.
+- Verificar: `test/users-password.test.ts`; `test/rate-limit.test.ts`; `npm run typecheck`; `npm test`;
+  `curl` com `newPassword` curta (`400`) e 6 tentativas seguidas (`429`).
+- Arquivos: src/routes/users.ts, test/users-password.test.ts, test/rate-limit.test.ts
 - Tamanho: S · Depende de: T2
 
-## Checkpoint A (T1–T3)
-- [x] typecheck + testes verdes; `register.test.ts` e `login.test.ts` sem alteração
-- [x] Revisão do dono antes do `DELETE`
-
-## Task 4: `DELETE /users/me` ✅
+## Task 4: Documentação
 - Aceite:
-  - `{ "password": <senha certa> }` → `204` com corpo vazio; depois disso o mesmo token dá `401` no `GET /users/me`, o login
-    dá `401`, e o email e o username podem ser cadastrados de novo.
-  - Os registros financeiros do usuário somem do banco (`CASCADE`); os de **outro usuário** continuam no `GET` dele.
-  - Senha errada → `403` `Senha incorreta`, e a conta continua (o login ainda funciona).
-  - Sem `password`, `password: ""` e `password: 123` → `400` `Campo obrigatório ausente ou inválido`.
-  - Sem corpo, `null`, `[]` e `Content-Type: text/plain` → `INVALID_BODY` (o Fastify tem parser de texto);
-    `Content-Type: application/xml` → `415` (mensagem do `sendError`).
-  - Sem token e token revogado por logout → `401` padrão.
-  - Conta apagada entre o `SELECT` do hash e o `DELETE` → `401` padrão.
-  - O `passwordHash` não aparece em nenhuma resposta nem no `currentUser()`.
-- Verificar: `test/users-update-delete.test.ts`; `npm run typecheck`; `npm test`;
-  `curl` login → `POST /transactions` → `DELETE` com senha errada (403) → `DELETE` certo (204) → `GET /users/me` (401) → login (401).
-- Arquivos: src/routes/users.ts, test/users-update-delete.test.ts
-- Tamanho: S · Depende de: T3
-
-## Task 5: Rate limit no `PATCH` e no `DELETE /users/me` ✅
-- Aceite:
-  - `DELETE` 5/min e `PATCH` 10/min por IP (`config.rateLimit`), com constantes nomeadas como as do `auth.ts`.
-  - Com token válido: o 6º `DELETE` (senha errada) e o 11º `PATCH` no mesmo minuto → `429`
-    `Muitas tentativas. Tente novamente mais tarde.` com `Retry-After`.
-  - Requisição sem token recebe `401` (o `requireAuth` roda antes do limite).
-  - Os testes de `users-update-delete.test.ts` continuam com o rate limit desligado (`createTestApp()` padrão).
-- Verificar: `test/rate-limit.test.ts`; `npm run typecheck`; `npm test`; `curl` 6 `DELETE` com senha errada (o 6º dá 429).
-- Arquivos: src/routes/users.ts, test/rate-limit.test.ts
-- Tamanho: S · Depende de: T4
-
-## Checkpoint B (T4–T5)
-- [x] typecheck + testes verdes
-- [x] Fluxo do `curl` da spec (Success Criteria) completo no servidor real
-- [x] Revisão do dono
-
-## Task 6: Documentação ✅
-- Aceite:
-  - `AGENTS.md`: etapa atual (edição e exclusão da conta), estrutura (`user-fields.ts`, `db-errors.ts`, `users.ts`, testes novos),
-    roteiro da etapa e decisões (`/users/me` sem admin, `PATCH` só `username`/`email`, email sem senha e o risco futuro
-    da recuperação de senha, `DELETE` com senha e `403`, rate limits).
-  - Spec com status **concluída** e os Success Criteria marcados.
-- Verificar: leitura dos dois arquivos; `npm test` verde.
-- Arquivos: AGENTS.md, SPEC-users-update-delete.md
-- Tamanho: S · Depende de: T5
+  - AGENTS.md: etapa atual, estrutura (`users.ts`, teste novo), decisões (troca de senha com token novo e
+    `token_version`; rate limit 5/min), roteiro da etapa; a regra "A troca de senha (futura) deve incrementar
+    `token_version`" deixa de ser futura.
+  - Spec: status concluída e critérios marcados.
+- Verificar: leitura do dono.
+- Arquivos: AGENTS.md, SPEC-endpoints-restantes.md
+- Tamanho: XS · Depende de: T3
 
 ## Checkpoint final
-- [x] Todos os critérios de aceite da spec com teste passando
-- [x] `npm run typecheck` e `npm test` verdes
-- [x] Documentação atualizada; pronto para o commit (com o pedido do dono)
+- [ ] `npm run typecheck` e `npm test` verdes
+- [ ] Revisão do dono; depois, `/plan` da migração para Rust
