@@ -145,7 +145,7 @@ npm test                                      # testes automatizados (vitest, ba
 npm run db:generate -- --name <nome>          # gera migration a partir do schema.ts
 npm run db:migrate                            # aplica as migrations
 cd rust && cargo run                          # servidor Rust na porta 3001 (lê o ../.env)
-cd rust && cargo test                         # testes em Rust (banco *_test; rodar o npm test antes cria o banco)
+cd rust && cargo test                         # testes em Rust (cria e migra o banco *_test sozinho)
 cd rust && cargo clippy --all-targets -- -D warnings && cargo fmt --check
 npm run test:parity                           # compila o Rust e roda a suíte do vitest contra ele (porta 3101)
 ```

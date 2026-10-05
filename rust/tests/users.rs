@@ -1,16 +1,12 @@
 // /users/me em casos que a paridade HTTP não alcança (equivalentes aos testes só-TS de users-update-delete.test.ts).
+mod common;
+
+use common::TestApp;
 use meu_backend::{
     http::error::AppError,
     routes::users::{ProfileChanges, change_password, update_profile},
 };
-use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
-
-async fn test_pool() -> sqlx::PgPool {
-    dotenvy::from_filename_override("../.env.test").expect(".env.test não encontrado");
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL não definida no .env.test");
-    PgPoolOptions::new().connect(&url).await.unwrap()
-}
 
 #[tokio::test]
 async fn patch_de_conta_apagada_no_meio_do_caminho_da_401() {
@@ -20,7 +16,7 @@ async fn patch_de_conta_apagada_no_meio_do_caminho_da_401() {
         email: None,
     };
 
-    let result = update_profile(&test_pool().await, Uuid::new_v4(), changes).await;
+    let result = update_profile(&TestApp::new().await.pool, Uuid::new_v4(), changes).await;
 
     assert!(matches!(result, Err(AppError::Unauthorized)));
 }
@@ -29,33 +25,28 @@ async fn patch_de_conta_apagada_no_meio_do_caminho_da_401() {
 async fn troca_de_senha_com_token_revogado_no_meio_do_caminho_da_401_e_nao_muda_nada() {
     // Arrange: conta criada direto no banco com token_version 1 (como depois de um logout); o token da
     // requisição ainda tinha a versão 0.
-    let pool = test_pool().await;
+    let app = TestApp::new().await;
+    let pool = &app.pool;
     let username = format!("t_{}", &Uuid::new_v4().simple().to_string()[..12]);
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO users (username, email, password_hash, token_version) VALUES ($1, $2, 'hash-antigo', 1) RETURNING id",
     )
     .bind(&username)
     .bind(format!("{username}@email.com"))
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .unwrap();
 
     // Act
-    let result = change_password(&pool, id, 0, "hash-novo").await;
+    let result = change_password(pool, id, 0, "hash-novo").await;
 
     // Assert
     assert!(matches!(result, Err(AppError::Unauthorized)));
     let (hash, version): (String, i32) =
         sqlx::query_as("SELECT password_hash, token_version FROM users WHERE id = $1")
             .bind(id)
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .unwrap();
     assert_eq!((hash.as_str(), version), ("hash-antigo", 1));
-
-    sqlx::query("DELETE FROM users WHERE id = $1")
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
 }

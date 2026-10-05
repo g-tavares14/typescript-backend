@@ -12,7 +12,7 @@ Plano: [plan.md](plan.md). Cada tarefa: código → `cargo fmt --check` + `cargo
 - Conceitos: `sqlx migrate`, checksum de migration, `sqlx::migrate!()` (SQL embutido no binário).
 - Tamanho: S
 
-## R2: Helpers de teste compartilhados
+## R2: Helpers de teste compartilhados ✅
 - Aceite: `rust/tests/common/mod.rs` cria/migra o banco `_test` (trava `_test`), `TestApp` com requisições
   encadeadas, `reset_database`, `register_user`, `login`. Os testes Rust atuais passam a usar os helpers.
 - Conceitos: módulo `common` em `tests/`, builder pattern, `OnceCell`/`Mutex` do tokio.

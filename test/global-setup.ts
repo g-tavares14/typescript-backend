@@ -17,7 +17,13 @@ export default async function setup() {
   const admin = new pg.Client({ connectionString: adminUrl.toString() });
   await admin.connect();
   const { rowCount } = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
-  if (rowCount === 0) {
+  // Banco migrado pelo sqlx (pelos testes Rust, rust/tests/common): o migrate do drizzle tentaria criar as tabelas
+  // de novo. O banco de testes é descartável, então é recriado (transição até o TS sair).
+  const recreate = rowCount !== 0 && (await managedBySqlx(url.toString()));
+  if (recreate) {
+    await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
+  }
+  if (rowCount === 0 || recreate) {
     await admin.query(`CREATE DATABASE "${databaseName}"`);
   }
   await admin.end();
@@ -41,6 +47,14 @@ export default async function setup() {
       server.kill();
     };
   }
+}
+
+async function managedBySqlx(connectionString: string) {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  const { rows } = await client.query("SELECT to_regclass('public._sqlx_migrations') IS NOT NULL AS managed");
+  await client.end();
+  return rows[0].managed as boolean;
 }
 
 async function waitForHealth(apiUrl: string) {
