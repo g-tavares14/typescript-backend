@@ -1,3 +1,4 @@
+import { isParity } from "./parity.ts";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { buildApp } from "../src/app.ts";
 import { createDb } from "../src/db/client.ts";
@@ -16,7 +17,10 @@ const { app, db } = createTestApp();
 
 // Rota de teste SEM o requireAuth, que chama currentUser(). O Fastify aceita rotas novas até o ready (que o
 // primeiro inject dispara), então dá para adicioná-la aqui sem alterar o helper nem as rotas reais.
-app.get("/teste-sem-hook", async (request) => currentUser(request));
+// Só no modo TS: no modo paridade o app é um cliente HTTP.
+if (!isParity) {
+  app.get("/teste-sem-hook", async (request) => currentUser(request));
+}
 
 beforeEach(async () => {
   await resetDatabase(db);
@@ -71,7 +75,8 @@ describe("requireAuth roda antes do parse do corpo", () => {
   });
 });
 
-describe("currentUser", () => {
+// Só-TS: no Rust não existe "rota sem o hook" (quem não pede CurrentUser não lê o usuário; o compilador garante).
+describe.skipIf(isParity)("currentUser", () => {
   test("numa rota sem o requireAuth falha alto: 500 genérico, sem detalhes na resposta", async () => {
     const response = await app.inject({ method: "GET", url: "/teste-sem-hook" });
 
@@ -80,7 +85,8 @@ describe("currentUser", () => {
   });
 });
 
-describe("falha do banco dentro do requireAuth", () => {
+// Só-TS: monta um app com o banco quebrado. Equivalente em Rust: rust/tests/auth.rs.
+describe.skipIf(isParity)("falha do banco dentro do requireAuth", () => {
   test("responde 500 genérico, sem vazar a mensagem do erro do banco", async () => {
     // Arrange: o token é real (gerado pelo app saudável), mas o app testado aponta para uma porta sem banco.
     // A assinatura do token passa; o erro acontece na consulta de token_version, dentro do hook.

@@ -5,6 +5,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
+    auth::CurrentUser,
     error::AppError,
     json::JsonBody,
     password::{hash_password, simulate_password_verification, verify_password},
@@ -18,6 +19,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/logout", post(logout))
 }
 
 // Resposta do cadastro. `#[derive(Serialize)]` gera a conversão para JSON (o serde lê os nomes dos campos).
@@ -113,4 +115,18 @@ async fn login(
         token_type: "Bearer",
         expires_in: ACCESS_TOKEN_TTL_SECONDS,
     }))
+}
+
+// Logout em todos os dispositivos: subir a versão invalida todos os tokens já emitidos para o usuário.
+// O CurrentUser é só desta rota: register e login continuam públicos.
+async fn logout(State(pool): State<PgPool>, current: CurrentUser) -> Result<StatusCode, AppError> {
+    // O incremento é feito pelo banco (token_version + 1), não lendo o valor e somando aqui: dois logouts
+    // simultâneos não se atropelam e cada um conta.
+    sqlx::query!(
+        "UPDATE users SET token_version = token_version + 1 WHERE id = $1",
+        current.user.id
+    )
+    .execute(&pool)
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -5,7 +5,7 @@ use std::error::Error;
 
 use axum::{
     Json,
-    http::StatusCode,
+    http::{StatusCode, header::WWW_AUTHENTICATE},
     response::{IntoResponse, Response},
 };
 use serde_json::json;
@@ -27,6 +27,9 @@ pub enum AppError {
     // 409 com uma mensagem fixa (ex.: email ou username já cadastrado).
     #[error("{0}")]
     Conflict(&'static str),
+    // 401 padrão de toda falha de autenticação (sem token, token inválido ou revogado, conta inexistente).
+    #[error("Não autenticado")]
+    Unauthorized,
     // 401 do login (email ou senha errados): a mesma mensagem para os dois casos.
     #[error("Email ou senha inválidos")]
     InvalidCredentials,
@@ -56,7 +59,7 @@ impl AppError {
         match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Conflict(_) => StatusCode::CONFLICT,
-            AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            AppError::Unauthorized | AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -84,6 +87,11 @@ impl IntoResponse for AppError {
             }
             other => other.to_string(),
         };
-        (self.status(), Json(json!({ "error": message }))).into_response()
+        let body = Json(json!({ "error": message }));
+        // O 401 de autenticação diz ao cliente qual esquema usar (RFC 7235). O do login não: lá não há token.
+        if matches!(self, AppError::Unauthorized) {
+            return (self.status(), [(WWW_AUTHENTICATE, "Bearer")], body).into_response();
+        }
+        (self.status(), body).into_response()
     }
 }

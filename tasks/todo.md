@@ -67,7 +67,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/token.rs, rust/src/password.rs, rust/src/routes/auth.rs
 - Tamanho: M · Depende de: T4
 
-## Task 6: `CurrentUser`, `GET /users/me` e `POST /auth/logout`
+## Task 6: `CurrentUser`, `GET /users/me` e `POST /auth/logout` ✅
 - Aceite: extractor `FromRequestParts` com `401` padrão (`WWW-Authenticate: Bearer`) antes de qualquer erro de corpo;
   `token_version` conferido no banco; logout incrementa a versão no banco. `users-me`, `logout` e as partes HTTP de
   `require-auth` na paridade.
