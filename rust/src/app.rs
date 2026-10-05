@@ -12,7 +12,8 @@ pub fn build_app(state: AppState) -> Router {
     let router = Router::new()
         .nest("/health", routes::health::router())
         .nest("/auth", routes::auth::router())
-        .nest("/users", routes::users::router());
+        .nest("/users", routes::users::router())
+        .nest("/transactions", routes::transactions::router());
     // O estado é clonado para cada requisição (barato: ver src/state.rs).
     finish(router).with_state(state)
 }

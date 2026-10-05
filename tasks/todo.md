@@ -93,7 +93,7 @@ trecho + `curl` na porta 3001 → explicação dos conceitos + perguntas de revi
 - Arquivos: rust/src/routes/users.rs
 - Tamanho: M · Depende de: T7
 
-## Task 9: `POST` e `GET /transactions`
+## Task 9: `POST` e `GET /transactions` ✅
 - Aceite: validação de `type`, `amount` (inteiro, `> 0`, teto), `description`, `date`; lista ordenada + `summary`
   calculado no banco; filtro `from`/`to` com os erros do TS (inclusive query repetida). `transactions.test.ts` na paridade.
 - Conceitos: `i64` e o limite de 2^53, `time::Date`, `Query` do axum, `serde(rename_all)`.
